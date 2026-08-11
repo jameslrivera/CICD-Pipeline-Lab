@@ -201,14 +201,86 @@ Full detail on the service, the model, and the container is in
 
 ---
 
+## Kubernetes
+
+A 3-node kind cluster (one control-plane, two workers), pinned by image digest.
+`k8s/` is numbered so `kubectl apply -f k8s/` is order-safe — kubectl processes a
+directory alphabetically, so an unnumbered `namespace.yaml` gets applied *after*
+the ConfigMap that needs it.
+
+```bash
+kind create cluster --config kind-config.yaml
+kubectl apply --server-side -f https://raw.githubusercontent.com/projectcalico/calico/v3.32.1/manifests/calico.yaml
+kind load docker-image phishing-detector:0.1.0 --name cicd-lab
+kubectl apply -f k8s/
+```
+
+`kind load` is not optional. kind nodes are containers with their own image
+store and cannot see the host's Docker images — without it the pods sit in
+`ErrImagePull` for an image that is sitting right there on the laptop.
+
+The ConfigMap is mounted as a **directory**, not as a single file via `subPath`.
+That distinction is the difference between a live-updating config and one that
+needs a restart: `subPath` mounts are copied once and never resynced, while a
+directory mount is kept in sync by the kubelet. Since the app re-reads the
+threshold every request, editing the ConfigMap retunes detection with no rollout.
+
+### The NetworkPolicy was silently doing nothing
+
+The first version of this cluster used kind's default CNI, `kindnet`. The
+NetworkPolicy applied cleanly, `kubectl get networkpolicy` listed it, and
+`kubectl describe` showed the rules. It filtered nothing.
+
+kindnet provides pod networking but ships **no NetworkPolicy controller**. The
+API server accepts and stores the object regardless, because `networkpolicies`
+is a built-in Kubernetes resource — enforcement is the CNI's job, and if the CNI
+does not implement it, nothing anywhere reports a problem.
+
+This was caught by testing enforcement instead of trusting the manifest — running
+the same egress attempt in a namespace with a default-deny policy and in one
+without, and comparing:
+
+```console
+### 1. BASELINE - default namespace, no policy (expect: CONNECTED)
+RESULT: CONNECTED - egress allowed
+### 2. EGRESS - phishing-detector namespace, default-deny (expect: BLOCKED)
+RESULT: BLOCKED - TimeoutError
+### 3. DNS - phishing-detector namespace, explicitly allowed (expect: DNS OK)
+RESULT: DNS OK -> 10.96.0.1
+```
+
+Under kindnet, test 2 returned `CONNECTED` — identical to the unrestricted
+baseline. The cluster is now built with `disableDefaultCNI: true` and Calico
+installed instead, and the results above are from that cluster.
+
+**A security control that does not work is worse than no control**, because it
+produces confidence without protection. "The manifest applied successfully" is
+not evidence that traffic is being filtered.
+
+### Two rules that are easy to get wrong
+
+**DNS egress has to be explicitly allowed.** With egress denied and no DNS
+exception, every hostname lookup hangs until it times out. The symptom is not
+"connection refused" — it is a service that appears to hang for seconds and then
+fails resolving a name, which looks exactly like an application bug.
+
+**The ingress rule has to admit the node, not just other pods.** The kubelet runs
+liveness and readiness probes from the *node's* IP, not from inside the pod
+network. An ingress rule tightened to pod-to-pod traffic only would block the
+probes, fail readiness, and remove every pod from the Service — a self-inflicted
+outage that presents as an application fault.
+
+---
+
 ## Roadmap
 
 - [x] **Phase 1 — Application.** FastAPI service over a trained classifier, 13 tests.
 - [x] **Phase 2 — Container.** Multi-stage build, non-root UID 10001, package
       manager stripped, pinned deps, verified under a read-only root filesystem.
-- [ ] **Phase 3 — Kubernetes (local).** kind cluster, ConfigMap supplying the
-      threshold, Deployment with probes and a hardened `securityContext`,
-      Service, NetworkPolicy with default-deny egress.
+- [x] **Phase 3 — Kubernetes (local).** 3-node kind cluster, ConfigMap supplying
+      the threshold, Deployment with three probes and a hardened
+      `securityContext`, ClusterIP Service, and a default-deny NetworkPolicy
+      whose enforcement is verified rather than assumed.
 - [ ] **Phase 4 — Terraform.** `cluster-local/` split from `app/` so the cluster
       layer can be swapped for AKS or EKS without touching the app layer. `k8s/`
       becomes a Helm chart.

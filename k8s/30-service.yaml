@@ -1,0 +1,33 @@
+# Pods are cattle: they get new IPs every time they are rescheduled, and there
+# are two of them. A Service is a stable name and virtual IP in front of that
+# moving set.
+#
+# The mechanism worth understanding: the Service does NOT track pods directly.
+# It selects them by label, and a controller maintains an EndpointSlice listing
+# the IPs of every pod that both matches the selector AND is passing its
+# readiness probe. That second condition is what makes readiness meaningful — a
+# pod that fails /readyz is silently removed from this list and stops receiving
+# traffic, without being restarted.
+apiVersion: v1
+kind: Service
+metadata:
+  name: phishing-detector
+  namespace: phishing-detector
+  labels:
+    app: phishing-detector
+spec:
+  # ClusterIP is reachable only from inside the cluster. Nothing about this
+  # workload should be exposed to the outside world in a lab; `kubectl
+  # port-forward` is how we reach it from the laptop, and that tunnels through
+  # the API server rather than opening a hole in the cluster.
+  type: ClusterIP
+  selector:
+    app: phishing-detector
+  ports:
+    - name: http
+      port: 8000
+      # targetPort references the container port by NAME, not number. If the
+      # container port ever moves, only the Deployment changes — this file does
+      # not have to know the number.
+      targetPort: http
+      protocol: TCP

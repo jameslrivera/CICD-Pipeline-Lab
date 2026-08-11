@@ -1,0 +1,145 @@
+# A Deployment does not run pods itself. It manages a ReplicaSet, and the
+# ReplicaSet keeps N identical pods alive. That indirection is what makes rolling
+# updates work: changing the pod template creates a *new* ReplicaSet and shifts
+# pods from old to new a few at a time.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phishing-detector
+  namespace: phishing-detector
+  labels:
+    app: phishing-detector
+spec:
+  replicas: 2
+
+  # How the Deployment finds the pods it owns. This must match the pod template
+  # labels below, and it is immutable after creation — Kubernetes will reject an
+  # edit to it, because changing which pods you own mid-flight is not a
+  # well-defined operation.
+  selector:
+    matchLabels:
+      app: phishing-detector
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Never drop below the desired count during a rollout, and only add one
+      # extra pod at a time. With 2 replicas this means: start a new pod, wait
+      # for it to pass its readiness probe, then remove an old one.
+      maxUnavailable: 0
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        app: phishing-detector
+    spec:
+      # Pod-level security context. These apply to every container in the pod.
+      securityContext:
+        # Refuse to start if the image's user resolves to UID 0. This is the
+        # check that requires a *numeric* USER in the Dockerfile — Kubernetes
+        # cannot resolve a username against /etc/passwd without running the
+        # image first, so a named user fails with "non-numeric user".
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          # Applies the container runtime's default seccomp filter, which blocks
+          # roughly 40 rarely-used syscalls that show up mostly in exploits.
+          # Not the default in Kubernetes unless you ask for it.
+          type: RuntimeDefault
+
+      containers:
+        - name: phishing-detector
+          image: phishing-detector:0.1.0
+
+          # Critical for kind. The default for a non-":latest" tag is
+          # IfNotPresent, but stating it stops anyone "fixing" this to Always,
+          # which would make the kubelet try to pull from a registry that does
+          # not have this image and fail with ErrImagePull.
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: http
+              containerPort: 8000
+
+          securityContext:
+            # Blocks the setuid path that lets a process gain privileges its
+            # parent did not have. There is no reason a Python web server needs
+            # to become more privileged than it started.
+            allowPrivilegeEscalation: false
+            # The container filesystem is immutable at runtime. An attacker who
+            # gets code execution cannot drop a binary, a webshell, or a cron
+            # entry anywhere it will persist. This works because the app writes
+            # nothing — PYTHONDONTWRITEBYTECODE stops even .pyc files.
+            readOnlyRootFilesystem: true
+            capabilities:
+              # Start from zero Linux capabilities rather than the runtime's
+              # default set. This app binds port 8000, not a privileged port
+              # below 1024, so it needs none of them.
+              drop: ["ALL"]
+
+          # Requests are what the scheduler uses to decide which node has room.
+          # Limits are what the kernel enforces at runtime: exceed the memory
+          # limit and the container is OOMKilled; exceed the CPU limit and it is
+          # throttled, not killed.
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+          # Three probes, three different questions.
+
+          # "Has it finished booting?" Importing scikit-learn and deserializing
+          # the model takes a couple of seconds. While this probe is failing,
+          # the liveness probe is not run at all — which is the point. Without
+          # it, a slow start looks identical to a hung process and the kubelet
+          # kills the container before it ever serves.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+
+          # "Is it wedged?" Failing this restarts the container. It deliberately
+          # hits /healthz, which ignores the model and config, so a bad
+          # ConfigMap can never cause a restart loop.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          # "Should it get traffic?" Failing this removes the pod from the
+          # Service's endpoints but leaves it running and debuggable. This one
+          # hits /readyz, which does check the model and the threshold.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          volumeMounts:
+            - name: detector-config
+              # Mounted as a DIRECTORY, not a single file via subPath. This is
+              # deliberate and it is the difference between a live-updating
+              # config and one that needs a restart: subPath mounts are copied
+              # once and never resynced, while a directory mount is kept in sync
+              # by the kubelet. Since the app re-reads the threshold on every
+              # request, a directory mount means editing the ConfigMap retunes
+              # detection with no rollout at all.
+              mountPath: /app/config
+              readOnly: true
+
+      volumes:
+        - name: detector-config
+          configMap:
+            name: detector-config

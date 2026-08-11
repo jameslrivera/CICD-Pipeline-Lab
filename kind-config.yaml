@@ -1,0 +1,42 @@
+# kind ("Kubernetes IN Docker") runs each cluster node as a Docker container
+# rather than a VM or a real machine. The control-plane node runs the API server,
+# scheduler, and controller-manager; the workers just run workloads.
+#
+# Two workers is the smallest number that makes scheduling observable — with one
+# node, "the scheduler placed these pods" is not a claim you can see. With two,
+# you can watch replicas land on different nodes and watch what happens when one
+# fills up.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: cicd-lab
+
+networking:
+  # kind's built-in CNI, kindnet, provides pod networking but has NO
+  # NetworkPolicy controller. The API server still accepts and stores a
+  # NetworkPolicy — it simply never filters a packet. That failure mode is
+  # silent and dangerous: `kubectl get networkpolicy` shows the rule, `kubectl
+  # describe` shows the rule, and traffic it claims to deny flows freely.
+  #
+  # This was confirmed empirically rather than assumed: with a default-deny
+  # egress policy applied, a pod in the namespace still opened a TCP connection
+  # to 1.1.1.1:80, exactly like a pod in an unrestricted namespace.
+  #
+  # So the default CNI is disabled and Calico is installed instead, because a
+  # security control that does not work is worse than no control — it produces
+  # confidence without protection.
+  disableDefaultCNI: true
+  # Calico's default IP pool. It must match what Calico expects, or pods get
+  # addresses Calico will not route.
+  podSubnet: "192.168.0.0/16"
+
+nodes:
+  - role: control-plane
+    # Pinned by digest, not just tag. A tag can be repointed at new content;
+    # a digest is the content. This is the same discipline as pinning the
+    # application's Python dependencies — a cluster that comes up as a different
+    # Kubernetes version next month is not a reproducible environment.
+    image: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
+  - role: worker
+    image: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
+  - role: worker
+    image: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5

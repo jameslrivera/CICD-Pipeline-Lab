@@ -1,0 +1,98 @@
+# NetworkPolicies are the cluster's equivalent of firewall rules, with two
+# properties that surprise people coming from traditional firewalls:
+#
+# 1. They are ALLOW-only and purely additive. There is no "deny" rule. You
+#    create a default-deny by writing a policy that selects pods but lists no
+#    permitted traffic, and then you add allow policies alongside it. The
+#    effective permission is the union of every policy that selects the pod.
+# 2. They do nothing at all unless the CNI plugin implements them. The API
+#    server accepts and stores a NetworkPolicy regardless. "kubectl apply
+#    succeeded" is NOT evidence that traffic is being filtered — which is why
+#    this phase tests enforcement empirically instead of trusting the manifest.
+#
+# ---------------------------------------------------------------------------
+# Policy 1: default-deny everything, both directions.
+# ---------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: phishing-detector
+spec:
+  # An empty podSelector selects EVERY pod in the namespace. Combined with the
+  # empty rule lists below, this is the "deny by default" baseline.
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  # No ingress: or egress: keys at all means no traffic is permitted in either
+  # direction. Everything below this point re-opens exactly what is needed.
+---
+# ---------------------------------------------------------------------------
+# Policy 2: allow DNS egress.
+# ---------------------------------------------------------------------------
+# This is the rule people forget, and its absence produces the most confusing
+# failure in Kubernetes networking. With egress denied, a pod cannot reach
+# CoreDNS, so every hostname lookup hangs until it times out. The symptom is not
+# "connection refused" — it is a service that appears to hang for 5 seconds and
+# then fails with a name resolution error, which looks like an application bug.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: phishing-detector
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              # kube-system carries this label automatically. CoreDNS lives
+              # there, so this is "let pods talk to the DNS namespace".
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        # TCP/53 matters for responses too large for a UDP datagram. Allowing
+        # only UDP works until it suddenly does not.
+        - protocol: TCP
+          port: 53
+---
+# ---------------------------------------------------------------------------
+# Policy 3: allow ingress to the API port.
+# ---------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-http-ingress
+  namespace: phishing-detector
+spec:
+  podSelector:
+    matchLabels:
+      app: phishing-detector
+  policyTypes:
+    - Ingress
+  ingress:
+    # No `from` key at all means "from any source" — any pod in any namespace,
+    # plus the node itself. Omitting it is the canonical spelling; an explicit
+    # `from: []` means the same thing but reads like it might mean "from
+    # nothing", which is exactly the sort of ambiguity you do not want in a
+    # firewall rule.
+    #
+    # Node access matters here specifically: the kubelet runs the liveness and
+    # readiness probes from the NODE's IP, not from inside the cluster network.
+    # A tighter ingress rule that only allowed pod-to-pod traffic would block
+    # the probes, and the pods would fail readiness and never receive traffic —
+    # a self-inflicted outage that looks like an application fault.
+    #
+    # It is deliberately broad because nothing else exists in this cluster yet
+    # to narrow it to. Production would name the calling workload's namespace
+    # and labels.
+    - ports:
+        - protocol: TCP
+          port: 8000
