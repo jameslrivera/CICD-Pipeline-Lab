@@ -1,0 +1,16 @@
+# Baked-into-the-image allowlist. In Phase 3 a Kubernetes ConfigMap will mount
+# over this file with different blocks, which is how we prove the running pod
+# reads the ConfigMap and not this copy.
+blocks:
+  - cidr: 10.20.0.0/16
+    label: scada-field-devices
+    owner: ot-engineering
+  - cidr: 10.30.4.0/24
+    label: engineering-workstations
+    owner: it-operations
+  - cidr: 192.168.50.0/24
+    label: jump-hosts
+    owner: security
+  - cidr: 172.16.8.0/22
+    label: management-network
+    owner: network-operations

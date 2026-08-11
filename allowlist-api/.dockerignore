@@ -1,0 +1,12 @@
+# Keep the build context small and keep local cruft out of the image.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+tests/
+.git/
+.gitignore
+README.md
+requirements-dev.txt

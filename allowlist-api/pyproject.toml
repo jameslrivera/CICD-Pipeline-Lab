@@ -1,0 +1,12 @@
+# Tooling configuration only — the app is not packaged as a distributable,
+# it ships as a container image. Keeping the lint rules in the repo means the
+# Phase 5 pipeline runs exactly the same checks you run locally.
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
