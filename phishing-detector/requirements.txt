@@ -1,0 +1,14 @@
+# Runtime dependencies, pinned exactly.
+#
+# scikit-learn's version is not just hygiene here. The model artifact is a
+# pickle of fitted scikit-learn objects; deserializing it under a different
+# version warns at best and breaks at worst. This pin MUST match the version
+# that produced model/phishing_nb.joblib — see requirements-train.txt.
+fastapi==0.115.6
+uvicorn==0.34.0
+pyyaml==6.0.2
+scikit-learn==1.6.1
+scipy==1.15.2
+numpy==2.2.6
+joblib==1.4.2
+threadpoolctl==3.6.0

@@ -1,0 +1,12 @@
+# Decision threshold: the probability at or above which a URL is called
+# phishing. This is policy, not model — it is read on every request so a
+# Kubernetes ConfigMap can retune detection sensitivity without redeploying
+# the model artifact.
+#
+# Lower it to catch more phishing at the cost of more false positives; raise it
+# to reduce false positives at the cost of missing more. On the held-out test
+# set at 0.5 the model runs about 96% precision and 88% recall.
+#
+# In Phase 3 a ConfigMap mounts over this file with a different value, which is
+# how we prove the running pod reads the ConfigMap and not this baked-in copy.
+threshold: 0.5

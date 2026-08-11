@@ -1,0 +1,18 @@
+# Keep the build context small and keep local cruft out of the image.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.git/
+.gitignore
+README.md
+requirements-dev.txt
+requirements-train.txt
+
+# Training never runs in the serving image. Neither the code nor the dataset
+# belongs in something that only needs to answer /predict.
+tests/
+training/
+*.csv

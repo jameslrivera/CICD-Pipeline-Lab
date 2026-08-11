@@ -1,0 +1,5 @@
+# Offline training only. pandas is needed to build the dataset but never to
+# serve a prediction, so it is deliberately absent from requirements.txt — a
+# dependency that only training needs has no business in the runtime image.
+-r requirements.txt
+pandas==2.2.3

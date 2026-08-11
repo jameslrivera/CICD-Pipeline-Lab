@@ -23,5 +23,10 @@ crash.log
 kubeconfig
 *.kubeconfig
 
+# Training data. The dataset is ~30MB of Kaggle-sourced URLs and does not belong
+# in git — only the fitted artifact in phishing-detector/model/ ships.
+phishing_site_urls.csv
+*.csv
+
 # macOS
 .DS_Store
