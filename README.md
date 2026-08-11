@@ -26,9 +26,9 @@ Kubernetes readiness probe something real to detect.
 ## Roadmap
 
 - [x] **Phase 1 — Application.** FastAPI service, config-driven allowlist, 8 tests.
-- [ ] **Phase 2 — Container.** Multi-stage Dockerfile, non-root UID 10001, pinned
-      deps. Written but not yet built — Docker Desktop is not installed on this
-      machine yet. See "Installing Docker" below.
+- [x] **Phase 2 — Container.** Multi-stage Dockerfile, non-root UID 10001, pinned
+      deps, package manager stripped from the runtime image. Verified against a
+      live container, including a `--read-only` root filesystem.
 - [ ] **Phase 3 — Kubernetes (local).** kind cluster, ConfigMap, Deployment with
       probes and a hardened securityContext, Service, NetworkPolicy.
 - [ ] **Phase 4 — Terraform.** Split `cluster-local/` from `app/` so the cluster
@@ -78,10 +78,18 @@ cd allowlist-api && docker build -t allowlist-api:0.1.0 .
 docker run --rm -p 8000:8000 allowlist-api:0.1.0
 ```
 
-Confirm it is not running as root:
+Confirm it is not running as root — this should print `uid=10001(app)`:
 
 ```bash
 docker run --rm allowlist-api:0.1.0 id
+```
+
+Confirm the config really is read from disk rather than baked into the image.
+Mounting a different file over `/app/config/allowlist.yaml` changes what the API
+serves with no rebuild, which is exactly what the Phase 3 ConfigMap will do:
+
+```bash
+docker run --rm --read-only -v "$PWD/config/allowlist.yaml:/app/config/allowlist.yaml:ro" -p 8000:8000 allowlist-api:0.1.0
 ```
 
 ## Repository layout

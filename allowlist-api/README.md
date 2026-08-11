@@ -47,10 +47,21 @@ python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 
 ## Container notes
 
-The image is multi-stage: the builder holds pip and the virtualenv build, the
-runtime stage receives only the finished `/opt/venv`, so pip never ships. It runs
-as UID 10001 — a fixed number, because the Phase 3 Deployment asserts
-`runAsUser: 10001` and that has to match a real account in the image.
+The image is multi-stage: the builder does the installing, the runtime stage
+receives only the finished `/opt/venv`, so pip's caches and build artifacts never
+reach the shipped image. It runs as UID 10001 — a fixed number, because the Phase
+3 Deployment asserts `runAsUser: 10001` and that has to match a real account in
+the image.
+
+pip itself is deleted from the runtime image, in two places. Removing it from the
+venv is not enough: `python:3.12-slim` ships a second copy at `/usr/local`, and
+leaving that one behind means `pip install` still works inside a running
+container. A package manager in a running container is an attacker's install
+tool, and nothing at runtime needs one. Verify with:
+
+```bash
+docker run --rm allowlist-api:0.1.0 sh -c 'pip --version; python -m pip --version'
+```
 
 `PYTHONDONTWRITEBYTECODE=1` matters more than it looks: Phase 3 sets
 `readOnlyRootFilesystem: true`, and an interpreter trying to write `.pyc` files
