@@ -301,8 +301,9 @@ for a pipeline that does not exist is worse than no badge.
 
 ```
 CICD-Pipeline-Lab/
-├── CLAUDE.md                    # project brief and working agreement
 ├── README.md
+├── kind-config.yaml             # 3-node cluster, Calico, digests pinned
+├── k8s/                         # numbered so `apply -f k8s/` is order-safe
 ├── .gitignore                   # blocks tfstate/tfvars and datasets
 └── phishing-detector/
     ├── app/main.py              # the service
