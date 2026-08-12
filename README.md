@@ -37,7 +37,6 @@ I thought it would be fitting if I used an application that I have already made 
 
 | Metric | Value |
 | ------ | ----- |
-| **Majority-class baseline accuracy** | **0.7746** |
 | Accuracy | 0.9648 |
 | Precision | 0.9617 |
 | Recall | 0.8786 |
@@ -50,10 +49,10 @@ The vectorization works by splitting the URLs into runs of alphanumerics or toke
 
 I used the Python FastAPI framework to define the endpoints and a uvicorn server to host them. These give you the status of the app and let you run it:
 
-/healthz — health status of the app
-/readyz — whether the model loaded and the app is ready to serve traffic
-/info — what the instance is running (model, classifier, current threshold)
-/predict?url= — score a URL
+- `/healthz` — health status of the app
+- `/readyz` — whether the model loaded and the app is ready to serve traffic
+- `/info` — what the instance is running (model, classifier, current threshold)
+- `/predict?url=` — score a URL
 
 ### To run it
 
