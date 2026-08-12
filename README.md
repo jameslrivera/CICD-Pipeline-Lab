@@ -113,6 +113,8 @@ virtualenv, and the second copies only the finished result. Pip's caches and
 build tooling never reach the shipped image. Final size is 594MB, most of it
 scikit-learn, scipy, and numpy.
 
+<img width="1143" height="356" alt="Screenshot 2026-08-12 at 5 51 44 PM" src="https://github.com/user-attachments/assets/91bc9aec-b54d-477d-9e99-022af92f90a7" />
+
 ### Building and running it
 
 ```bash
