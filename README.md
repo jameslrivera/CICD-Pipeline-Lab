@@ -130,7 +130,7 @@ ships, not what it does:
 
 ```bash
 curl -s --get --data-urlencode "url=paypal.co.uk.secure-login.verify-account.tk/cgi-bin/webscr" localhost:8091/predict
-# {"url":"paypal.co.uk...","phishing":true,"probability":1.0,"threshold":0.5}
+# {"phishing":true,"probability":1.0,"threshold":0.5}
 ```
 
 ### Verifying the hardening
@@ -149,7 +149,6 @@ Dockerfile:
 | No package manager | A working `pip` beside an attacker with a foothold is an install tool |
 | Read-only root filesystem | An attacker cannot drop a binary, webshell, or cron entry anywhere persistent |
 | Exact version pins | A build that resolves different versions on different days is not reproducible |
-| Thread pools pinned to 1 | scikit-learn sizes pools from the *host* CPU count and oversubscribes against a cgroup limit |
 
 ---
 
