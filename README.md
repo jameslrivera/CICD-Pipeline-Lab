@@ -138,15 +138,8 @@ curl -s --get --data-urlencode "url=paypal.co.uk.secure-login.verify-account.tk/
 Each control is checked against the built image rather than assumed from the
 Dockerfile:
 
-```bash
-docker run --rm phishing-detector:0.1.0 id
-# uid=10001(app) gid=10001(app) groups=10001(app)
+<img width="933" height="162" alt="Screenshot 2026-08-12 at 6 24 43 PM" src="https://github.com/user-attachments/assets/4a3529f7-b56c-46f1-8d01-788c242fe694" />
 
-docker run --rm phishing-detector:0.1.0 pip --version
-# sh: 1: pip: not found
-
-docker exec <container> touch /app/test
-# touch: cannot touch '/app/test': Read-only file system
 ```
 
 | Control | Why |
