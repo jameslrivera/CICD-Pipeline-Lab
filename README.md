@@ -231,14 +231,9 @@ restart.
 I used Helm to package the Kubernetes manifests into one chart, and Terraform to
 create the cluster and install that chart.
 
-Up to this point I built everything by running commands by hand. That works once,
-but it is not repeatable and there is no record of what was actually deployed.
-Now the whole setup lives in files: `terraform apply` builds it, `terraform
-destroy` removes it.
-
-Helm turns the manifests into templates with the changeable values pulled out
-into a separate file. Instead of editing seven YAML files to change one setting,
-I edit one value and Helm regenerates the rest.
+This puts the whole setup in files instead of commands I ran by hand.
+`terraform apply` builds the cluster and deploys the app, and `terraform destroy`
+tears it all down.
 
 I split the Terraform into two layers:
 
