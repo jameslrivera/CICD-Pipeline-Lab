@@ -3,63 +3,19 @@
 [![CI](https://github.com/jameslrivera/CICD-Pipeline-Lab/actions/workflows/ci.yml/badge.svg)](https://github.com/jameslrivera/CICD-Pipeline-Lab/actions/workflows/ci.yml)
 
 **Personal DevOps pipeline project built using Docker, Kubernetes, Terraform,
-Helm, and GitHub Actions.**
+Helm, and GitLab.**
 
 ---
 
 ## Background
 
-As the software engineering lifecycle is updated and teams work together more
-efficiently, it's a necessity to understand the tools and procedures involved in
-Software Development and IT Operations. This includes containerization, container
-orchestration, CI/CD automation, Infrastructure as Code, and automation and
-scripting. This project tackles each of those concepts and their associated
-tools.
-
-The application at the center of it is a phishing URL classifier: a FastAPI
-service that scores a URL using a Naive Bayes model trained on roughly 507,000
-labeled URLs. It is a genuine security tool, and it is also intentionally the
-*smallest* part of this repository. It exists to be something worth protecting,
-so that every control applied to it is applied for a real reason.
-
-The architectural decision the whole lab is built around is the separation of the
-**model** from the **policy**. The trained model is an immutable artifact baked
-into the container image; changing it is a real release, with a new build, a new
-scan, and a new signature. The decision threshold — the probability at which a
-URL is called phishing — is mutable configuration, read from disk on every
-request. That means a Kubernetes ConfigMap can retune detection sensitivity
-without redeploying the model, which is exactly what an analyst needs when false
-positives spike at 2am.
+   As the software engineering lifestyle is updated and teams work together more efficiently it’s a necessity to understand the tools and procedures involved in Software Development and IT Operations. This includes Containerization, container orchestration, CI/CD automation, Infrastructure as Code and Automating and Scripting. This project tackles each of those concepts and their associated tools.
 
 ---
 
 ## Inspiration
 
-Reading about a stack and operating it are different things. Building the whole
-chain end to end — application, image, cluster, infrastructure code, pipeline —
-forces every layer to actually work together, and that is where the details that
-documentation skips over turn up.
-
-The architecture is organised around one decision: separating the **model** from
-the **policy**. The trained model is an immutable artifact baked into the
-container image, so changing it is a real release with a new build and a new
-scan. The decision threshold — the probability at which a URL is called
-phishing — is mutable configuration, re-read from disk on every request. That
-means a Kubernetes ConfigMap can retune detection sensitivity without redeploying
-the model, which is exactly what an analyst needs when false positives spike at
-2am. Almost every later phase exists to deliver, protect, or prove that split.
-
-The habit that turned out to matter most was verifying each layer instead of
-assuming it worked. Several controls in this repository looked correct, applied
-without error, and did nothing at all. A NetworkPolicy was accepted by the API
-server and filtered no traffic. A test suite passed while a liveness endpoint
-returned 503 to every probe. A detector failed open on a one-word configuration
-typo while still reporting healthy. Each was found by testing the control rather
-than trusting it, and each is documented here rather than quietly fixed.
-
-The bias throughout is toward proving things: commands that were actually run,
-output that was actually captured, and honest notes where something does not work
-or is not finished.
+I was inspired to build a project that encompasses front to end of a DevOps Pipeline.
 
 ---
 
@@ -92,14 +48,12 @@ The vectorization works by splitting the URLs into runs of alphanumerics or toke
 `[paypal, co, uk, cgi, bin, webscr]`.
 
 
+I used the Python FastAPI framework to define the endpoints and a uvicorn server to host them. These give you the status of the app and let you run it:
 
-
-
-
-
-A FastAPI service exposing four endpoints: `/healthz` for liveness, `/readyz` for
-readiness, `/info` for what the instance is running, and `/predict?url=` to score
-a URL.
+/healthz — health status of the app
+/readyz — whether the model loaded and the app is ready to serve traffic
+/info — what the instance is running (model, classifier, current threshold)
+/predict?url= — score a URL
 
 ### To run it
 
@@ -127,6 +81,7 @@ Score a known phishing URL:
 ```bash
 curl -s --get --data-urlencode "url=paypal.co.uk.secure-login.verify-account.tk/cgi-bin/webscr" localhost:8090/predict
 ```
+Results:
 ```json
 {"url":"paypal.co.uk.secure-login.verify-account.tk/cgi-bin/webscr","phishing":true,"probability":1.0,"threshold":0.5}
 ```
@@ -136,6 +91,7 @@ And a legitimate one:
 ```bash
 curl -s --get --data-urlencode "url=www.wikipedia.org/wiki/Cat" localhost:8090/predict
 ```
+Results:
 ```json
 {"url":"www.wikipedia.org/wiki/Cat","phishing":false,"probability":0.0004,"threshold":0.5}
 ```
