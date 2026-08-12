@@ -140,7 +140,6 @@ Dockerfile:
 
 <img width="933" height="162" alt="Screenshot 2026-08-12 at 6 24 43 PM" src="https://github.com/user-attachments/assets/4a3529f7-b56c-46f1-8d01-788c242fe694" />
 
-```
 
 | Control | Why |
 | ------- | --- |
