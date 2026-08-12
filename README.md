@@ -411,6 +411,86 @@ plaintext, including anything marked sensitive.
 
 ---
 
+## CI/CD
+
+The same pipeline expressed twice — [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+and [`.gitlab-ci.yml`](.gitlab-ci.yml). Stages are identical: lint, test, build,
+push, deploy dry-run. What differs is the platform, and the differences are
+annotated inline in both files rather than in a separate document.
+
+GitLab is here because it self-hosts, so the whole pipeline can run inside an
+air-gapped enclave with no egress. That is why it tends to be the CI platform in
+DoD environments.
+
+### What the pipeline actually checks
+
+Anyone can write a pipeline that runs `pytest`. These steps exist because each
+one corresponds to something that has already gone wrong in this project:
+
+**The image must run as uid 10001.** Asserted against the built artifact, not
+claimed in prose.
+
+**The image must contain no package manager.** `pip` was in the image twice —
+once in the virtualenv, once in the base image's `/usr/local` — and removing only
+the first left `pip install` fully working inside a running container.
+
+**The image must serve under a read-only root filesystem**, which is what the
+Deployment imposes.
+
+**A known phishing URL must be classified as phishing.** This is the check that
+would catch a corrupt or wrong model artifact shipping inside an otherwise
+perfectly healthy image — every other check would pass.
+
+**The rendered chart must still contain its security controls.** The chart job
+greps the `helm template` output for `runAsNonRoot`, `readOnlyRootFilesystem`,
+`allowPrivilegeEscalation`, `runAsUser: 10001`, and
+`automountServiceAccountToken: false`. A template can render perfectly valid YAML
+that quietly dropped one of those, and nothing else in the pipeline would notice.
+
+**The integration tests must run, not skip.** They are written to *fail* when the
+model artifact is missing, and the pipeline separately asserts the file is
+non-empty. A green run that silently tested no model is worse than a red one.
+
+### Deploy is a dry run, and says so
+
+The only cluster is a kind cluster on a laptop, which a hosted runner cannot
+reach. The deploy stage renders the chart and stops. Rendering proves the
+manifests are valid; it does not prove they apply, and a pipeline claiming to
+deploy when it does not would be the same class of untruth as a NetworkPolicy
+that stores cleanly and filters nothing.
+
+On a self-hosted runner inside the cluster's network — the normal DoD
+arrangement — that job becomes a real `helm upgrade --install`.
+
+### Four differences worth being able to explain
+
+**Execution environment.** GitHub Actions hands you a VM with a large
+pre-installed toolchain and you add languages with `setup-*` actions. GitLab
+gives you a container per job and you name the image. GitLab's model is more
+explicit and ports more cleanly into an air-gapped registry mirror.
+
+**Building images.** Actions has a first-party buildx action and a Docker daemon
+already running. GitLab jobs *are* containers, so building means Docker-in-Docker
+or a daemonless builder. In an enclave you would reach for Buildah or Kaniko,
+which build without a privileged daemon — which matters when cluster policy
+forbids privileged containers, exactly the policy this project enforces.
+
+**Test reporting.** GitLab parses JUnit XML natively and renders failures in the
+merge request. Actions needs a third-party action for the same thing.
+
+**Conditionals.** Actions uses `if:` on a step; GitLab uses `rules:` on a job.
+Both express the same intent here — a pull request builds and smoke-tests the
+image but must never publish it, or anyone who can open a PR can publish to the
+registry namespace.
+
+### Credentials
+
+Neither pipeline stores a registry credential. Actions uses the run-scoped
+`GITHUB_TOKEN` with `packages: write` granted to the image job alone; GitLab uses
+`CI_JOB_TOKEN`, which dies with the job. Nothing long-lived exists to leak.
+
+---
+
 ## Roadmap
 
 - [x] **Phase 1 — Application.** FastAPI service over a trained classifier, 13 tests.
@@ -424,7 +504,7 @@ plaintext, including anything marked sensitive.
       cluster layer can be swapped for AKS or EKS without touching the app
       layer. `k8s/` converted to a Helm chart with environment-agnostic
       templates.
-- [ ] **Phase 5 — CI/CD.** GitHub Actions and GitLab CI side by side, same
+- [x] **Phase 5 — CI/CD.** GitHub Actions and GitLab CI side by side, same
       stages, so the platform differences are explicit.
 - [ ] **Phase 6 — Supply chain.** Trivy gate on HIGH/CRITICAL, CycloneDX SBOM,
       Checkov on the Terraform, Cosign signing — including the model artifact.
