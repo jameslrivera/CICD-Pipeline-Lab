@@ -196,26 +196,33 @@ tunnel:
 kubectl port-forward -n phishing-detector svc/phishing-detector 8080:8000
 ```
 
-### Proving the ConfigMap is what gets read
+### Injecting configuration into the running container
 
-The image ships `threshold: 0.5`. The ConfigMap supplies `0.30`, and a running
-pod reports `0.30` — proving it reads the ConfigMap, not its own image layer.
+A ConfigMap lets Kubernetes push configuration into a container that is already
+running, without touching the image. The image ships a detection threshold of
+`0.5`; the ConfigMap supplies `0.30`, and the pod uses the ConfigMap's value.
 
-The effect is real. This is a genuine phishing URL from the dataset — a car parts
-site hosting a fake Google Mail login — scoring just under the default cutoff:
+This is why the app was built to re-read its threshold on every request. The
+model stays immutable inside the image, while the policy applied to it is owned
+by the cluster and can change at any time.
+
+The difference is not cosmetic. Below is a real phishing URL from the dataset —
+a car parts site hosting a fake Google Mail login — scoring just under the
+default cutoff:
 
 ```bash
-# Locally, image default 0.5 — missed
+# Locally, using the image's own 0.5 — missed
 curl -s --get --data-urlencode "url=car-accessories.co.in/googlemail.htm" localhost:8090/predict
 # {"phishing":false,"probability":0.4899,"threshold":0.5}
 
-# In the cluster, ConfigMap 0.3 — caught
+# In the cluster, using the ConfigMap's 0.3 — caught
 curl -s --get --data-urlencode "url=car-accessories.co.in/googlemail.htm" localhost:8080/predict
 # {"phishing":true,"probability":0.4899,"threshold":0.3}
 ```
 
-Same image, same probability. Only the cutoff moved, and a real phishing page
-went from missed to caught with no rebuild and no redeploy.
+Same image, same model, same probability. The cluster changed the cutoff, and a
+real phishing page went from missed to caught — no rebuild, no redeploy, no
+restart.
 
 ---
 
