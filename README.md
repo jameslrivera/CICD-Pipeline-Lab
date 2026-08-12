@@ -81,6 +81,73 @@ A FastAPI service exposing four endpoints: `/healthz` for liveness, `/readyz` fo
 readiness, `/info` for what the instance is running, and `/predict?url=` to score
 a URL.
 
+### Running it locally
+
+Install dependencies and start the server:
+
+```bash
+cd phishing-detector && python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+```
+
+```bash
+.venv/bin/uvicorn app.main:app --port 8090
+```
+
+In a second terminal:
+
+```bash
+curl -s localhost:8090/healthz
+```
+```json
+{"status":"ok"}
+```
+
+```bash
+curl -s localhost:8090/readyz
+```
+```json
+{"status":"ready","threshold":0.5}
+```
+
+```bash
+curl -s localhost:8090/info
+```
+```json
+{"model":"phishing_nb.joblib","classifier":"MultinomialNB","vocabulary_size":57702,"threshold":0.5}
+```
+
+Score a known phishing URL:
+
+```bash
+curl -s --get --data-urlencode "url=paypal.co.uk.secure-login.verify-account.tk/cgi-bin/webscr" localhost:8090/predict
+```
+```json
+{"url":"paypal.co.uk.secure-login.verify-account.tk/cgi-bin/webscr","phishing":true,"probability":1.0,"threshold":0.5}
+```
+
+And a legitimate one:
+
+```bash
+curl -s --get --data-urlencode "url=www.wikipedia.org/wiki/Cat" localhost:8090/predict
+```
+```json
+{"url":"www.wikipedia.org/wiki/Cat","phishing":false,"probability":0.0004,"threshold":0.5}
+```
+
+Run the tests:
+
+```bash
+.venv/bin/python -m pytest -q
+```
+```
+42 passed
+```
+
+FastAPI also generates interactive API documentation at
+`http://localhost:8090/docs` with no extra work.
+
+### The model
+
 The model is a `TfidfVectorizer` feeding a `MultinomialNB` classifier. URLs are
 split on runs of alphanumerics, so `paypal.co.uk/cgi-bin/webscr` becomes
 `[paypal, co, uk, cgi, bin, webscr]`. That is where the signal lives — brand
