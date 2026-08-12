@@ -286,43 +286,28 @@ forever.
 
 ### Proof it is actually managing the cluster
 
-Helm reports the release it deployed, and Terraform reports every resource it
-owns — so the running app is genuinely managed by these files, not deployed by
-hand and described afterwards:
+To show that Terraform and Helm are really running the app and not just sitting
+in the repo, I asked each of them what they own. Helm lists the release it
+deployed, and Terraform lists every resource it created:
 
 ```bash
 helm list -n phishing-detector
-```
-```
-NAME                NAMESPACE           REVISION   STATUS     CHART
-phishing-detector   phishing-detector   1          deployed   phishing-detector-0.1.0
-```
-
-```bash
 terraform -chdir=terraform/app state list
-```
-```
-helm_release.phishing_detector
-kubernetes_namespace_v1.app
-kubernetes_namespace_v1.clients[0]
-```
-
-```bash
 terraform -chdir=terraform/cluster-local state list
 ```
-```
-kind_cluster.this
-null_resource.calico
-```
 
-### In the CI/CD pipeline
+<!-- paste your screenshot here -->
 
-Both are validated on every push rather than executed: the pipeline runs
+Terraform owns the kind cluster, the Calico install, the namespace, and the Helm
+release. Helm owns the seven Kubernetes objects inside it.
+
+### What they do in the CI/CD pipeline
+
+In the pipeline I check them instead of running them. Every push runs
 `terraform fmt -check` and `terraform validate` on both layers, and `helm lint`
-plus `helm template` on the chart. That catches syntax errors, missing values,
-and templates that render invalid YAML before they ever reach a cluster.
-Deployment stays manual here, because a hosted runner cannot reach a cluster
-running on a laptop.
+and `helm template` on the chart. That catches broken syntax and templates that
+render invalid YAML before they ever reach a cluster. The actual deploy stays
+manual, since a hosted runner cannot reach a cluster running on my laptop.
 
 ### Drift detection has a blind spot
 
