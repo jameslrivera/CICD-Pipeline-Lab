@@ -34,6 +34,49 @@ spec:
       labels:
         app: phishing-detector
     spec:
+      # Use the dedicated ServiceAccount that grants nothing, and refuse the
+      # token mount. Without these two lines the pod silently gets the default
+      # SA and a Kubernetes API credential written into its filesystem — for an
+      # application that never talks to the API.
+      serviceAccountName: phishing-detector
+      automountServiceAccountToken: false
+
+      # Force the replicas onto different nodes. Without this the scheduler is
+      # free to co-locate them: the default cluster spread constraint uses
+      # ScheduleAnyway, which is a preference, not a rule. Two replicas on one
+      # node means one node failure takes the whole Service down, and it is easy
+      # to look at `kubectl get pods -o wide`, see them spread, and assume it was
+      # guaranteed when it was luck.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: phishing-detector
+          # Without this, the constraint deadlocks every rollout on a 2-node
+          # cluster, and the deadlock is silent — the Deployment just sits there
+          # with a Pending pod reporting "didn't match pod topology spread
+          # constraints" until the progress deadline expires.
+          #
+          # The cause: maxSurge: 1 creates a third pod while the two old ones
+          # are still running one-per-node. Counting all three against maxSkew: 1
+          # means whichever node takes it now has 2 pods to the other's 1, so no
+          # node is legal. DoNotSchedule makes that a hard failure.
+          #
+          # matchLabelKeys scopes the skew calculation to pods sharing the same
+          # pod-template-hash, so the new ReplicaSet is balanced against itself
+          # rather than against the revision it is replacing. Kubernetes sets
+          # that label automatically on every Deployment-managed pod.
+          matchLabelKeys:
+            - pod-template-hash
+
+      # Give the kubelet time to propagate the endpoint removal before the
+      # process starts shutting down. Endpoint removal and SIGTERM are sent
+      # concurrently, so without this pause a rollout resets connections that
+      # were routed in the moment before the pod left the Service.
+      terminationGracePeriodSeconds: 30
+
       # Pod-level security context. These apply to every container in the pod.
       securityContext:
         # Refuse to start if the image's user resolves to UID 0. This is the
@@ -127,7 +170,24 @@ spec:
             timeoutSeconds: 2
             failureThreshold: 3
 
+          # Endpoint removal is asynchronous with SIGTERM. This pause keeps the
+          # container serving for a few seconds after Kubernetes decides to
+          # remove it, so in-flight requests finish instead of being reset.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+
           volumeMounts:
+            # readOnlyRootFilesystem leaves the process with nowhere to write at
+            # all. Nothing on the request path writes today, but Python's
+            # tempfile, Starlette's large-upload spooling, and joblib memmaps all
+            # reach for /tmp, and the resulting failure looks like an opaque 500
+            # rather than a permissions problem. An in-memory emptyDir gives a
+            # bounded writable scratch space without weakening the read-only
+            # root: it is tmpfs, so nothing survives a restart.
+            - name: tmp
+              mountPath: /tmp
             - name: detector-config
               # Mounted as a DIRECTORY, not a single file via subPath. This is
               # deliberate and it is the difference between a live-updating
@@ -140,6 +200,10 @@ spec:
               readOnly: true
 
       volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
         - name: detector-config
           configMap:
             name: detector-config

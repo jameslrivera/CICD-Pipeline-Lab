@@ -1,0 +1,21 @@
+# A PodDisruptionBudget constrains VOLUNTARY disruption — node drains, cluster
+# upgrades, autoscaler scale-down. Without one, `kubectl drain` on a node is
+# free to evict every replica it hosts, and during an upgrade that can mean the
+# whole Service disappears for as long as rescheduling takes.
+#
+# This is a different mechanism from the Deployment's maxUnavailable, which only
+# governs rollouts the Deployment itself performs. A drain is not a rollout, so
+# maxUnavailable: 0 offers no protection against it. Both are needed.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: phishing-detector
+  namespace: phishing-detector
+spec:
+  # With 2 replicas this permits exactly one to be evicted at a time. An
+  # operator draining both workers will find the second drain blocks until the
+  # first replica is rescheduled and Ready — which is the point.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: phishing-detector

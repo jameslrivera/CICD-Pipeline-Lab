@@ -25,9 +25,23 @@ networking:
   # security control that does not work is worse than no control — it produces
   # confidence without protection.
   disableDefaultCNI: true
-  # Calico's default IP pool. It must match what Calico expects, or pods get
-  # addresses Calico will not route.
-  podSubnet: "192.168.0.0/16"
+
+  # RFC 6598 carrier-grade NAT space, chosen deliberately.
+  #
+  # Calico's documented default pool is 192.168.0.0/16, and using it here was a
+  # real bug: this laptop sits on 192.168.1.235 behind a 192.168.1.1 gateway, so
+  # the pod network swallowed the operator's own LAN. Calico installed routes for
+  # 192.168.0.0/16 and blackholed the rest, and pods could reach 1.1.1.1 but
+  # could not reach the laptop, the router, or anything else on the local
+  # network. On a corporate or DoD network — where both 192.168/16 and 10/8 are
+  # in heavy use — that presents as a private registry, database, or syslog
+  # collector being mysteriously unreachable from pods only.
+  #
+  # 100.64.0.0/10 exists precisely to avoid this collision and is almost never
+  # used on a LAN. This value must match CALICO_IPV4POOL_CIDR in the Calico
+  # install (see scripts/install-calico.sh) — they are two independent settings
+  # that have to agree, not one deriving from the other.
+  podSubnet: "100.64.0.0/16"
 
 nodes:
   - role: control-plane

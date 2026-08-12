@@ -99,6 +99,46 @@ Tokenization replaced them entirely.
 The split is also stratified and seeded now, so a rerun reproduces the artifact
 exactly.
 
+## Known limitations
+
+Found by probing the deployed service rather than by reading the code. Both come
+from the same root cause: the tokenizer is `[A-Za-z0-9]+`, so the model can only
+see ASCII alphanumerics, and it scores on however many tokens it gets.
+
+**Non-ASCII domains are systematically misclassified as phishing.** Every
+character outside `[A-Za-z0-9]` is discarded before the model sees anything, so
+an internationalized domain is stripped to almost nothing and scored on the
+remains:
+
+| URL | Probability | Verdict at 0.30 |
+| --- | ----------- | --------------- |
+| `пример.рф/login` | 0.9934 | phishing |
+| `münchen.de/willkommen` | 0.4984 | phishing |
+| `日本.jp/index.html` | 0.3833 | phishing |
+
+`пример.рф/login` tokenizes to roughly `[login]` — the entire domain vanishes.
+This matters more than a typical accuracy gap, because IDN homograph attacks are
+themselves a phishing technique, so the model is blind in a phishing-relevant
+area. The fix is to punycode-normalize (`idna.encode`) before tokenizing, so
+`münchen.de` becomes `xn--mnchen-3ya.de` and survives as tokens.
+
+**Short URLs score high because there is little evidence either way.** More
+tokens means more signal, and the score drops sharply once a path is present:
+
+| URL | Probability |
+| --- | ----------- |
+| `google.com` | 0.3861 |
+| `google.com/search?q=weather` | 0.0036 |
+| `http://` | 0.9812 |
+
+A bare `http://` reduces to the single token `http` and scores 0.98. Anything
+operational would want a minimum-token guard that returns "insufficient signal"
+rather than a confident verdict.
+
+Neither is fixed here. This phase is about the pipeline, and both are model
+work — but shipping a detector without knowing where it fails is worse than the
+failures themselves.
+
 ## Retraining
 
 Training is an offline step. Neither the training code nor the dataset ships in

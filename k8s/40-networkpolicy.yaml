@@ -78,21 +78,28 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # No `from` key at all means "from any source" — any pod in any namespace,
-    # plus the node itself. Omitting it is the canonical spelling; an explicit
-    # `from: []` means the same thing but reads like it might mean "from
-    # nothing", which is exactly the sort of ambiguity you do not want in a
-    # firewall rule.
+    # Only namespaces explicitly labelled as clients may reach the API.
     #
-    # Node access matters here specifically: the kubelet runs the liveness and
-    # readiness probes from the NODE's IP, not from inside the cluster network.
-    # A tighter ingress rule that only allowed pod-to-pod traffic would block
-    # the probes, and the pods would fail readiness and never receive traffic —
-    # a self-inflicted outage that looks like an application fault.
+    # An earlier version of this file had no `from:` at all, which means "from
+    # anywhere" — every pod in every namespace could call /predict and /info
+    # unauthenticated. The comment justifying that claimed a narrower rule would
+    # block the kubelet's liveness and readiness probes, because probes
+    # originate from the node's IP rather than from the pod network.
     #
-    # It is deliberately broad because nothing else exists in this cluster yet
-    # to narrow it to. Production would name the calling workload's namespace
-    # and labels.
-    - ports:
+    # That justification was tested and is FALSE on Calico. A pod matching no
+    # ingress-allow policy at all still passed its HTTP readiness probe and
+    # reached Ready, because Calico does not apply workload ingress policy to
+    # traffic from the local host — which is exactly where probes come from. So
+    # ingress can be restricted without breaking health checking.
+    #
+    # Worth knowing that this is CNI-specific behaviour rather than something
+    # the NetworkPolicy spec guarantees. On a CNI that does subject host traffic
+    # to workload policy, probes would need an explicit allowance — so verify it
+    # on the CNI you actually run rather than trusting this comment.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              detector-client: allowed
+      ports:
         - protocol: TCP
           port: 8000

@@ -196,6 +196,25 @@ replaced them.
 
 The split is stratified and seeded, so retraining reproduces the artifact exactly.
 
+### Known limitations
+
+Probing the deployed service surfaced two systematic weaknesses, both from the
+tokenizer being ASCII-only (`[A-Za-z0-9]+`).
+
+Non-ASCII domains are stripped to almost nothing before the model sees them, and
+score as phishing: `пример.рф/login` returns 0.9934, `münchen.de/willkommen`
+0.4984. That is worse than a normal accuracy gap, because IDN homograph attacks
+are themselves a phishing technique — the model is blind in a phishing-relevant
+area. Punycode-normalizing before tokenizing would fix it.
+
+Short URLs score high because there is little evidence either way: `google.com`
+is 0.3861, but `google.com/search?q=weather` is 0.0036, and a bare `http://`
+reaches 0.9812 on the single token `http`.
+
+Neither is fixed yet — both are model work, and this phase is about the pipeline.
+They are documented because shipping a detector without knowing where it fails is
+worse than the failures.
+
 Full detail on the service, the model, and the container is in
 [phishing-detector/README.md](phishing-detector/README.md).
 
@@ -209,11 +228,20 @@ directory alphabetically, so an unnumbered `namespace.yaml` gets applied *after*
 the ConfigMap that needs it.
 
 ```bash
-kind create cluster --config kind-config.yaml
-kubectl apply --server-side -f https://raw.githubusercontent.com/projectcalico/calico/v3.32.1/manifests/calico.yaml
-kind load docker-image phishing-detector:0.1.0 --name cicd-lab
-kubectl apply -f k8s/
+kind create cluster --config kind-config.yaml && ./scripts/install-calico.sh && kind load docker-image phishing-detector:0.1.0 --name cicd-lab && kubectl apply -f k8s/
 ```
+
+Calico is installed by a script rather than a plain `kubectl apply` because its
+IP pool and kind's `podSubnet` are independent settings that have to agree, and
+the pool is fixed when `calico-node` first starts.
+
+The pod CIDR is `100.64.0.0/16` (RFC 6598), and that choice is a bug fix. Calico
+defaults to `192.168.0.0/16`, which on this machine swallowed the operator's own
+LAN — the laptop sits on `192.168.1.235` behind a `192.168.1.1` gateway, so pods
+could reach `1.1.1.1` but could not reach the laptop or the router. On a
+corporate or DoD network, where both `192.168/16` and `10/8` are in heavy use,
+that presents as a private registry or syslog collector being unreachable from
+pods and nothing else.
 
 `kind load` is not optional. kind nodes are containers with their own image
 store and cannot see the host's Docker images — without it the pods sit in
@@ -224,6 +252,17 @@ That distinction is the difference between a live-updating config and one that
 needs a restart: `subPath` mounts are copied once and never resynced, while a
 directory mount is kept in sync by the kubelet. Since the app re-reads the
 threshold every request, editing the ConfigMap retunes detection with no rollout.
+
+### Workload hardening
+
+| Control | Why it is there |
+| ------- | --------------- |
+| `pod-security.kubernetes.io/enforce: restricted` on the namespace | Without it every `securityContext` setting is voluntary. Verified: before the label, a pod with `privileged: true` and `hostPath: /` was **admitted** by the API server. After it, the same pod is rejected. |
+| Dedicated ServiceAccount, `automountServiceAccountToken: false` | The app never calls the Kubernetes API, but was being handed a JWT in its filesystem. Verified gone from the running container. |
+| `topologySpreadConstraints` with `DoNotSchedule` | The replicas were landing on separate nodes by luck. The cluster default is `ScheduleAnyway`, which is a preference, not a rule. |
+| PodDisruptionBudget `minAvailable: 1` | `maxUnavailable: 0` only governs rollouts. A `kubectl drain` is not a rollout and could evict both replicas at once. |
+| tmpfs `emptyDir` at `/tmp` | `readOnlyRootFilesystem` left the process nowhere to write. Nothing writes today, but `tempfile`, upload spooling, and joblib memmaps all reach for `/tmp`, and the failure looks like an opaque 500. |
+| `preStop` sleep + `terminationGracePeriodSeconds` | Endpoint removal and SIGTERM are concurrent, so rollouts were resetting in-flight connections. |
 
 ### The NetworkPolicy was silently doing nothing
 
@@ -264,11 +303,23 @@ exception, every hostname lookup hangs until it times out. The symptom is not
 "connection refused" — it is a service that appears to hang for seconds and then
 fails resolving a name, which looks exactly like an application bug.
 
-**The ingress rule has to admit the node, not just other pods.** The kubelet runs
-liveness and readiness probes from the *node's* IP, not from inside the pod
-network. An ingress rule tightened to pod-to-pod traffic only would block the
-probes, fail readiness, and remove every pod from the Service — a self-inflicted
-outage that presents as an application fault.
+**A claim I got wrong, and how it was caught.** The first version of the ingress
+rule had no `from:` at all — meaning any pod in any namespace could call
+`/predict` and `/info` unauthenticated. The comment justifying that said a
+narrower rule would block the kubelet's probes, since probes originate from the
+node's IP rather than the pod network.
+
+That was tested and it is false on Calico. A pod matching no ingress-allow policy
+at all still passed its HTTP readiness probe and reached `Ready`, because Calico
+does not apply workload ingress policy to traffic from the local host — which is
+exactly where probes come from. Ingress is now restricted to namespaces labelled
+`detector-client=allowed`, verified three ways: an unlabelled namespace is
+blocked, a labelled one succeeds, and both pods stay `1/1 Ready` with 0 restarts.
+
+Worth flagging that this is CNI-specific behaviour, not a guarantee of the
+NetworkPolicy spec. On a CNI that does subject host traffic to workload policy,
+probes would need an explicit allowance — so it is a thing to verify on the CNI
+you actually run, which is the general lesson.
 
 ---
 
