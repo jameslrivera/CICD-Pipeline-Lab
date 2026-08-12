@@ -116,7 +116,12 @@ terraform:
 # NetworkPolicy and Pod Security Admission enforce. Phase 7 covers Buildah on
 # Rocky Linux, which is the RHEL-native path.
 # --------------------------------------------------------------------------
-image:
+# NOT named `image`. `image` is a reserved top-level keyword in GitLab CI, so a
+# job by that name is parsed as the global image directive instead — GitLab
+# rejects the entire file with "image name should be a string" and creates zero
+# jobs. GitHub Actions has no equivalent collision, which is precisely why an
+# unrun pipeline is not a verified one.
+build:image:
   stage: build
   image: docker:27-cli
   services:
