@@ -54,7 +54,7 @@ I used the Python FastAPI framework to define the endpoints and a uvicorn server
 - `/info` — what the instance is running (model, classifier, current threshold)
 - `/predict?url=` — score a URL
 
-### To run it
+### Running it locally
 
 Install dependencies and start the server:
 
