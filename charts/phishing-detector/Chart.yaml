@@ -1,0 +1,19 @@
+# A Helm chart is a package: templates plus a values file that fills them in.
+# The point of moving k8s/ into one is that the templates stay
+# environment-agnostic and only the values change between environments — which
+# is what lets the same chart target kind today and AKS later without edits.
+apiVersion: v2
+name: phishing-detector
+description: A phishing URL classifier served over HTTP, with a runtime-tunable decision threshold
+type: application
+
+# version is the CHART's version — bump it when the templates change.
+version: 0.1.0
+# appVersion is the APPLICATION's version — it tracks the container image and is
+# only a default; values.yaml can override the tag independently.
+appVersion: "0.1.0"
+
+keywords:
+  - security
+  - phishing
+  - machine-learning

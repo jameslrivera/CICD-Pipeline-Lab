@@ -1,0 +1,20 @@
+{{- if .Values.podDisruptionBudget.enabled -}}
+{{/*
+Constrains VOLUNTARY disruption — node drains, cluster upgrades, autoscaler
+scale-down. This is a different mechanism from the Deployment's maxUnavailable,
+which only governs rollouts the Deployment itself performs. A drain is not a
+rollout, so maxUnavailable offers no protection against it; without a PDB,
+`kubectl drain` can evict every replica a node happens to hold.
+*/}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "phishing-detector.fullname" . }}
+  labels:
+    {{- include "phishing-detector.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "phishing-detector.selectorLabels" . | nindent 6 }}
+{{- end }}

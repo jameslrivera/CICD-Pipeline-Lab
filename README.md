@@ -323,6 +323,94 @@ you actually run, which is the general lesson.
 
 ---
 
+## Terraform and Helm
+
+Two layers, deliberately separate:
+
+```
+terraform/
+├── cluster-local/   # kind provider — expected to be replaced wholesale for cloud
+└── app/             # kubernetes + helm providers — must NOT change when it is
+charts/
+└── phishing-detector/   # environment-agnostic templates; only values differ
+```
+
+```bash
+terraform -chdir=terraform/cluster-local init && terraform -chdir=terraform/cluster-local apply
+```
+
+```bash
+kind load docker-image phishing-detector:0.1.0 --name cicd-lab
+```
+
+```bash
+terraform -chdir=terraform/app init && terraform -chdir=terraform/app apply
+```
+
+The app layer takes a kubeconfig path and a context name and nothing else. It
+deliberately does **not** read the cluster layer's state with a
+`terraform_remote_state` data source — that would be tidier Terraform and would
+also weld it to kind, defeating the split. Point those two variables at AKS and
+the directory works unchanged.
+
+The `kind load` between the two applies is a genuine manual step: kind nodes have
+their own image store and cannot see the host's Docker images. On a cloud cluster
+this is replaced by a registry push, which is Phase 5's job.
+
+### Drift detection does not work the way you would assume
+
+The interesting result from this phase. Two drift experiments, opposite outcomes:
+
+```console
+$ kubectl scale deployment/phishing-detector -n phishing-detector --replicas=4
+$ terraform plan
+  No changes. Your infrastructure matches the configuration.     # ← running 4, config says 2
+
+$ kubectl label namespace phishing-detector pod-security.kubernetes.io/enforce-
+$ terraform plan
+  # kubernetes_namespace_v1.app will be updated in-place
+      + "pod-security.kubernetes.io/enforce" = "restricted"
+  Plan: 0 to add, 1 to change, 0 to destroy.
+```
+
+Terraform detected the namespace label because `kubernetes_namespace_v1` is a
+resource it manages **directly** — it reads the live object and compares. It did
+not detect the replica count because `helm_release` tracks the *release* — its
+chart version, its values, its revision — not the Kubernetes objects the release
+produced. Nobody changed the values, so from Terraform's point of view nothing
+drifted.
+
+This matters more than a lab curiosity. "We manage it in Terraform" is often
+taken to mean "Terraform will correct anything that changes," and for anything
+behind a `helm_release` that is false. A `kubectl scale`, a `kubectl edit`, or a
+sidecar injected by a mutating webhook all survive `terraform plan` silently.
+
+Reconciling the two is different work:
+
+```bash
+terraform -chdir=terraform/app apply -replace=helm_release.phishing_detector
+```
+
+That forces the release to be recreated, which restored the replica count to 2.
+A plain `apply` will not do it.
+
+### The Terraform loop
+
+`init` downloads providers and writes the dependency lock. `fmt` rewrites to
+canonical style. `validate` checks syntax and types without touching the cluster.
+`plan -out=tfplan` saves a decision to a file, and `apply tfplan` replays exactly
+that decision — no re-planning, so nothing can have changed between the review
+and the execution. Running `plan` again afterwards should report **"No changes.
+Your infrastructure matches the configuration."** That final check is the point:
+a config that cannot converge is a config that will fight you forever.
+
+`.terraform.lock.hcl` is committed on purpose — it pins provider versions *and*
+hashes, and it is what makes `terraform init` reproducible for anyone else.
+State files and `.tfvars` are gitignored: state holds resource attributes in
+plaintext, including anything marked sensitive.
+
+---
+
 ## Roadmap
 
 - [x] **Phase 1 — Application.** FastAPI service over a trained classifier, 13 tests.
@@ -332,9 +420,10 @@ you actually run, which is the general lesson.
       the threshold, Deployment with three probes and a hardened
       `securityContext`, ClusterIP Service, and a default-deny NetworkPolicy
       whose enforcement is verified rather than assumed.
-- [ ] **Phase 4 — Terraform.** `cluster-local/` split from `app/` so the cluster
-      layer can be swapped for AKS or EKS without touching the app layer. `k8s/`
-      becomes a Helm chart.
+- [x] **Phase 4 — Terraform + Helm.** `cluster-local/` split from `app/` so the
+      cluster layer can be swapped for AKS or EKS without touching the app
+      layer. `k8s/` converted to a Helm chart with environment-agnostic
+      templates.
 - [ ] **Phase 5 — CI/CD.** GitHub Actions and GitLab CI side by side, same
       stages, so the platform differences are explicit.
 - [ ] **Phase 6 — Supply chain.** Trivy gate on HIGH/CRITICAL, CycloneDX SBOM,

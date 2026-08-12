@@ -1,0 +1,26 @@
+{{/*
+A stable name and virtual IP in front of a moving set of pods.
+
+The mechanism worth knowing: the Service does not track pods directly. It
+selects them by label, and a controller maintains an EndpointSlice of every pod
+that matches AND is passing its readiness probe. That second condition is what
+makes readiness meaningful — a pod failing /readyz is removed from this list and
+stops receiving traffic without being restarted.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "phishing-detector.fullname" . }}
+  labels:
+    {{- include "phishing-detector.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "phishing-detector.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      # References the container port by NAME. If the container port moves, only
+      # the Deployment changes; this file never has to know the number.
+      targetPort: http
+      protocol: TCP

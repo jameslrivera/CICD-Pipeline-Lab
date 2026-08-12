@@ -1,0 +1,19 @@
+{{/*
+The decision threshold, delivered as a file. The key name becomes the filename
+when this is mounted as a volume, so `detector.yaml` here is what the container
+sees at /app/config/detector.yaml — mounting over the copy baked into the image.
+
+The app re-reads this on every request, so changing .Values.detector.threshold
+and running `helm upgrade` retunes detection with no image rebuild and no pod
+restart.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "phishing-detector.fullname" . }}-config
+  labels:
+    {{- include "phishing-detector.labels" . | nindent 4 }}
+data:
+  detector.yaml: |
+    # Supplied by the ConfigMap, not the image.
+    threshold: {{ .Values.detector.threshold }}

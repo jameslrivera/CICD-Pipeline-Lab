@@ -1,0 +1,32 @@
+# Overrides for the local kind cluster.
+#
+# Only values live here — no template in charts/phishing-detector/templates/
+# knows anything about kind. That is the property that lets a values-cloud.yaml
+# target AKS later without a single template edit, and it is why the manifests
+# were moved into a chart at all.
+
+image:
+  # kind has no registry. Images are side-loaded with
+  # `kind load docker-image phishing-detector:0.1.0 --name cicd-lab`, and
+  # IfNotPresent stops the kubelet trying to pull from Docker Hub and failing
+  # with ErrImagePull for an image that is already on the node.
+  pullPolicy: IfNotPresent
+  tag: "0.1.0"
+
+detector:
+  # Deliberately different from the 0.5 baked into the image, because that
+  # difference is the proof: a pod reporting 0.30 is reading the ConfigMap and
+  # not its own image layer.
+  #
+  # It is also deliberately AGGRESSIVE, and honest about the cost. At 0.30 the
+  # model flags google.com (0.3861), irs.gov (0.6345), and login.gov (0.7236) as
+  # phishing — short bare domains carry few tokens and regress toward the class
+  # prior. That is a real false-positive rate, documented rather than hidden;
+  # see "Known limitations" in the README. A production value would be tuned
+  # against a held-out set of known-good domains, not chosen for a demo.
+  threshold: 0.30
+
+networkPolicy:
+  enabled: true
+  clientNamespaceSelector:
+    detector-client: allowed

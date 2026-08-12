@@ -23,6 +23,14 @@ crash.log
 kubeconfig
 *.kubeconfig
 
+# The tehcyx/kind provider writes a kubeconfig named <cluster>-config into the
+# module directory as a side effect of creating the cluster. It contains a
+# client certificate, client key, and CA data — working cluster-admin
+# credentials — and it is not obvious it is there, because nothing in the
+# Terraform config mentions it.
+terraform/*/*-config
+*-config.yaml
+
 # Training data. The dataset is ~30MB of Kaggle-sourced URLs and does not belong
 # in git — only the fitted artifact in phishing-detector/model/ ships.
 phishing_site_urls.csv
