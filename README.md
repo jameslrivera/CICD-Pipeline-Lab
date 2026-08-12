@@ -163,45 +163,19 @@ control-plane and two workers, each one a Docker container.
 
 <img width="1160" height="375" alt="Screenshot 2026-08-12 at 6 56 36 PM" src="https://github.com/user-attachments/assets/25211f6e-67e1-437e-942b-88bbfd4836e4" />
 
-### Creating the cluster and deploying
-
-```bash
-kind create cluster --config kind-config.yaml
-./scripts/install-calico.sh
-kind load docker-image phishing-detector:0.1.0 --name cicd-lab
-kubectl apply -f k8s/
-```
-
-`kind load` is required — kind nodes have their own image store and cannot see
-the images on your machine. Without it the pods sit in `ErrImagePull` for an
-image that is sitting right there.
-
-Calico replaces kind's default network plugin, for reasons in the NetworkPolicy
-section below.
 
 ### Verifying
 
 <img width="457" height="106" alt="Screenshot 2026-08-12 at 6 58 09 PM" src="https://github.com/user-attachments/assets/2a13948f-1203-4f85-a695-ac965c4f5201" />
 
-```bash
-kubectl get nodes
-```
-```
-NAME                     STATUS   ROLES           AGE   VERSION
-cicd-lab-control-plane   Ready    control-plane   21h   v1.36.1
-cicd-lab-worker          Ready    <none>          21h   v1.36.1
-cicd-lab-worker2         Ready    <none>          21h   v1.36.1
-```
+
+
 
 Two replicas, scheduled onto different workers:
 
-```bash
-kubectl get pods -n phishing-detector -o wide
-```
-```
-phishing-detector-569f77495c-964ct   1/1   Running   cicd-lab-worker
-phishing-detector-569f77495c-k94qg   1/1   Running   cicd-lab-worker2
-```
+<img width="1034" height="148" alt="Screenshot 2026-08-12 at 7 07 53 PM" src="https://github.com/user-attachments/assets/357c214e-0c60-4eb0-a234-508e3a5ef6af" />
+
+
 
 The Service is internal to the cluster, so reaching it from a laptop needs a
 tunnel:
