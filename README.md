@@ -154,100 +154,117 @@ Dockerfile:
 
 ## 3. Kubernetes
 
-A three-node kind cluster — one control-plane, two workers — with the node image
-pinned by digest rather than tag. A tag can be repointed at new content; a digest
-*is* the content.
+Docker runs one container. Kubernetes runs and supervises many of them across
+machines — it keeps a set number alive, health-checks them, restarts what hangs,
+and enforces security and network rules on every pod.
 
-The workload runs as a Deployment of two replicas with three probes, a hardened
-`securityContext`, a ClusterIP Service, and NetworkPolicies.
+I used **kind** (Kubernetes IN Docker) to run a three-node cluster locally: one
+control-plane and two workers, each one a Docker container.
+
+### Creating the cluster and deploying
+
+```bash
+kind create cluster --config kind-config.yaml
+./scripts/install-calico.sh
+kind load docker-image phishing-detector:0.1.0 --name cicd-lab
+kubectl apply -f k8s/
+```
+
+`kind load` is required — kind nodes have their own image store and cannot see
+the images on your machine. Without it the pods sit in `ErrImagePull` for an
+image that is sitting right there.
+
+Calico replaces kind's default network plugin, for reasons in the NetworkPolicy
+section below.
+
+### Verifying
+
+```bash
+kubectl get nodes
+```
+```
+NAME                     STATUS   ROLES           AGE   VERSION
+cicd-lab-control-plane   Ready    control-plane   21h   v1.36.1
+cicd-lab-worker          Ready    <none>          21h   v1.36.1
+cicd-lab-worker2         Ready    <none>          21h   v1.36.1
+```
+
+Two replicas, scheduled onto different workers:
+
+```bash
+kubectl get pods -n phishing-detector -o wide
+```
+```
+phishing-detector-569f77495c-964ct   1/1   Running   cicd-lab-worker
+phishing-detector-569f77495c-k94qg   1/1   Running   cicd-lab-worker2
+```
+
+The Service is internal to the cluster, so reaching it from a laptop needs a
+tunnel:
+
+```bash
+kubectl port-forward -n phishing-detector svc/phishing-detector 8080:8000
+```
 
 ### Proving the ConfigMap is what gets read
 
 The image ships `threshold: 0.5`. The ConfigMap supplies `0.30`. A running pod
-reports `0.30`, which is the proof — not an assertion — that it reads the
-ConfigMap and not its own image layer. `google.com` scores 0.3861, so it is
-classified as legitimate by the image's default and as phishing in-cluster, from
-the same image, with no rebuild.
+reports `0.30` — which proves it reads the ConfigMap, not the copy baked into
+its own image:
 
-The ConfigMap is mounted as a **directory**, not as a single file via `subPath`.
-That distinction is the difference between a live-updating config and one needing
-a restart: `subPath` mounts are copied once and never resynced by the kubelet,
-while a directory mount is kept in sync. Since the app re-reads the threshold on
-every request, a directory mount means retuning detection requires no rollout at
-all.
+```bash
+curl -s localhost:8080/readyz
+# {"status":"ready","threshold":0.3}
+
+curl -s --get --data-urlencode "url=google.com" localhost:8080/predict
+# {"url":"google.com","phishing":true,"probability":0.3861,"threshold":0.3}
+```
+
+Same image, same probability as Section 2 — but `google.com` is now flagged,
+because only the cutoff moved. Detection was retuned without rebuilding or
+redeploying anything.
 
 ### The NetworkPolicy was silently doing nothing
 
-The first version of this cluster used kind's default CNI, `kindnet`. The
-NetworkPolicy applied cleanly, `kubectl get networkpolicy` listed it, and
-`kubectl describe` printed the rules. It filtered nothing.
+A NetworkPolicy is a firewall rule for pods. I wrote one denying all traffic
+except DNS and the API port, applied it, and `kubectl` confirmed it existed.
 
-`kindnet` provides pod networking but ships **no NetworkPolicy controller**. The
-API server accepts and stores the object regardless, because `networkpolicies` is
-a built-in Kubernetes resource — enforcement is the CNI's job, and if the CNI
-does not implement it, nothing anywhere reports a problem.
+It filtered nothing.
 
-This was caught by testing enforcement rather than trusting the manifest: running
-the same egress attempt in a namespace with a default-deny policy and in one
-without, then comparing.
+kind's default network plugin has **no NetworkPolicy controller**. Kubernetes
+still accepts and stores the rule, because enforcement is the plugin's job — so
+every command reported success while traffic flowed freely.
 
-```console
-1. BASELINE - no policy            → CONNECTED - egress allowed
-2. EGRESS - default-deny namespace → BLOCKED - TimeoutError
-3. DNS - explicitly allowed        → DNS OK -> 10.96.0.1
+I caught it by testing enforcement instead of trusting the manifest: running the
+same connection attempt from a restricted namespace and an unrestricted one, and
+comparing.
+
+```
+1. BASELINE - no policy            -> CONNECTED
+2. EGRESS - default-deny namespace -> BLOCKED (TimeoutError)
+3. DNS - explicitly allowed        -> DNS OK
 ```
 
-Under `kindnet`, test 2 returned `CONNECTED` — identical to the unrestricted
-baseline. The cluster now disables the default CNI and installs Calico instead,
-and the results above come from that cluster.
+Under the default plugin, test 2 returned `CONNECTED` — identical to the
+baseline. The cluster now installs Calico, and the results above are from that
+cluster.
 
 **A security control that does not work is worse than no control**, because it
-produces confidence without protection. "The manifest applied successfully" is
-not evidence that traffic is being filtered.
+produces confidence without protection.
 
-### Hardening that was purely advisory
+### What the Deployment enforces
 
-Every `securityContext` setting was voluntary until the namespace carried Pod
-Security Admission labels. Verified against the live API server: a pod requesting
-`privileged: true`, `hostNetwork: true`, and `hostPath: /` was **admitted**. With
-`pod-security.kubernetes.io/enforce: restricted`, the same pod is rejected with a
-list of every violation.
+| Control | Effect |
+| ------- | ------ |
+| `runAsNonRoot`, `runAsUser: 10001` | Refuses to start if the image would run as root |
+| `readOnlyRootFilesystem: true` | Container filesystem is immutable at runtime |
+| `allowPrivilegeEscalation: false` | Process cannot gain privileges it did not start with |
+| `capabilities: drop: [ALL]` | Starts with zero Linux capabilities |
+| Pod Security Admission `restricted` | The namespace rejects any pod that violates the above |
 
-Alongside that: a dedicated ServiceAccount with the API token mount disabled (the
-app never calls the Kubernetes API but was being handed a credential for it), a
-PodDisruptionBudget, topology spread across nodes, a tmpfs `/tmp` so the
-read-only root does not break anything reaching for temporary files, and a
-`preStop` pause so rollouts stop resetting in-flight connections.
-
-### Two rules that are easy to get wrong
-
-**DNS egress must be explicitly allowed.** With egress denied and no exception,
-every hostname lookup hangs until it times out — presenting as a service that
-stalls and then fails resolving a name, which looks exactly like an application
-bug.
-
-**A comment I wrote was wrong, and testing caught it.** The ingress rule
-originally admitted everyone, justified by a claim that a narrower rule would
-block kubelet probes since they come from the node's IP. That was tested and is
-false on Calico, which does not apply workload ingress policy to host-sourced
-traffic. Ingress is now restricted to namespaces labelled
-`detector-client=allowed`, verified three ways: an unlabelled namespace is
-blocked, a labelled one succeeds, and both pods stay Ready with zero restarts.
-
-### A pod CIDR that swallowed the LAN
-
-Calico's documented default pool is `192.168.0.0/16`. On the machine running this
-lab — sitting at `192.168.1.235` behind a `192.168.1.1` gateway — that meant the
-pod network consumed the operator's own subnet. Pods could reach `1.1.1.1` but
-not the laptop or the router.
-
-The cluster now uses `100.64.0.0/16`, RFC 6598 carrier-grade NAT space chosen
-precisely because it is almost never used on a LAN. On a corporate or DoD network
-where both `192.168/16` and `10/8` are in heavy use, the original setting would
-present as a private registry or syslog collector being unreachable from pods and
-nothing else — a genuinely maddening failure to diagnose.
-
----
+The last row is what makes the others real. Without it every setting is
+voluntary — I confirmed the API server would admit a `privileged` pod with the
+host filesystem mounted until that label existed.
 
 ## 4. Terraform and Helm
 
