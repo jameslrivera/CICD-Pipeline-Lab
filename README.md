@@ -161,6 +161,8 @@ and enforces security and network rules on every pod.
 I used **kind** (Kubernetes IN Docker) to run a three-node cluster locally: one
 control-plane and two workers, each one a Docker container.
 
+<img width="1160" height="375" alt="Screenshot 2026-08-12 at 6 56 36 PM" src="https://github.com/user-attachments/assets/25211f6e-67e1-437e-942b-88bbfd4836e4" />
+
 ### Creating the cluster and deploying
 
 ```bash
@@ -178,6 +180,8 @@ Calico replaces kind's default network plugin, for reasons in the NetworkPolicy
 section below.
 
 ### Verifying
+
+<img width="457" height="106" alt="Screenshot 2026-08-12 at 6 58 09 PM" src="https://github.com/user-attachments/assets/2a13948f-1203-4f85-a695-ac965c4f5201" />
 
 ```bash
 kubectl get nodes
