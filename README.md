@@ -77,11 +77,31 @@ or is not finished.
 
 ## 1. Application
 
+I thought it would be fitting if I used an application that I have already made in the past to build the DevOps pipeline around. So I took a pretrained model that I made from scratch from a past research project. The model classifies URLs as either phishing or safe. I trained the model on over 500,000 URLs from a URL dataset from Kaggle. The model vectorizes the URLs into tokens and then runs the Naive Bayes algorithm to score the URL's likelihood of being phishing. In tests the model performed well;
+
+| Metric | Value |
+| ------ | ----- |
+| **Majority-class baseline accuracy** | **0.7746** |
+| Accuracy | 0.9648 |
+| Precision | 0.9617 |
+| Recall | 0.8786 |
+| F1 | 0.9183 |
+| ROC AUC | 0.9898 |
+
+The vectorization works by splitting the URLs into runs of alphanumerics or tokens, so `paypal.co.uk/cgi-bin/webscr` becomes
+`[paypal, co, uk, cgi, bin, webscr]`.
+
+
+
+
+
+
+
 A FastAPI service exposing four endpoints: `/healthz` for liveness, `/readyz` for
 readiness, `/info` for what the instance is running, and `/predict?url=` to score
 a URL.
 
-### Running it locally
+### To run it
 
 Install dependencies and start the server:
 
@@ -94,20 +114,6 @@ cd phishing-detector && python3.12 -m venv .venv && .venv/bin/pip install -r req
 ```
 
 In a second terminal:
-
-```bash
-curl -s localhost:8090/healthz
-```
-```json
-{"status":"ok"}
-```
-
-```bash
-curl -s localhost:8090/readyz
-```
-```json
-{"status":"ready","threshold":0.5}
-```
 
 ```bash
 curl -s localhost:8090/info
@@ -134,96 +140,10 @@ curl -s --get --data-urlencode "url=www.wikipedia.org/wiki/Cat" localhost:8090/p
 {"url":"www.wikipedia.org/wiki/Cat","phishing":false,"probability":0.0004,"threshold":0.5}
 ```
 
-Run the tests:
 
-```bash
-.venv/bin/python -m pytest -q
-```
-```
-42 passed
-```
 
-FastAPI also generates interactive API documentation at
-`http://localhost:8090/docs` with no extra work.
 
-### The model
 
-The model is a `TfidfVectorizer` feeding a `MultinomialNB` classifier. URLs are
-split on runs of alphanumerics, so `paypal.co.uk/cgi-bin/webscr` becomes
-`[paypal, co, uk, cgi, bin, webscr]`. That is where the signal lives — brand
-names appearing in paths where they do not belong, unusual TLDs, long hex blobs.
-
-Held-out results on 101,439 URLs the model never saw:
-
-| Metric | Value |
-| ------ | ----- |
-| **Majority-class baseline accuracy** | **0.7746** |
-| Accuracy | 0.9648 |
-| Precision | 0.9617 |
-| Recall | 0.8786 |
-| F1 | 0.9183 |
-| ROC AUC | 0.9898 |
-
-The baseline is listed first because it is what makes the rest meaningful.
-Always guessing "legitimate" scores 77.5% on this class balance, so the model
-beats doing nothing by 19 points — not by 96.
-
-### Three forms of leakage, found and corrected
-
-An earlier version of this model used eight hand-crafted numeric features and
-scored F1 0.342 — barely above the do-nothing baseline. Three separate problems
-were inflating even that:
-
-The **scaler was fitted before the train/test split**, so test-set statistics
-leaked into training. The vectorizer now lives inside a `Pipeline`, which by
-construction only ever fits on the training split.
-
-**Duplicate URLs were never removed.** The raw dataset is 7.7% duplicates —
-42,151 rows of 549,346. Without deduplication the same URL lands in both splits
-and the model is scored on rows it memorized.
-
-**Two features could not be computed at inference time.** They were group means
-of URL length by domain, calculated across the whole dataset. Scoring a single
-URL, there is no group to average over. That is training/serving skew: the
-features were leaky *and* unservable. Tokenization replaced them.
-
-The split is now stratified and seeded, so retraining reproduces the artifact
-exactly — verified by training twice and comparing.
-
-### Liveness and readiness deliberately disagree
-
-`/healthz` returns 200 whenever the process is serving, **even with a completely
-broken model**. `/readyz` returns 503 when the model or the threshold will not
-load.
-
-The distinction is what Kubernetes does with each answer. A liveness failure
-makes the kubelet kill and restart the container. A readiness failure removes the
-pod from the Service's endpoints but leaves it running.
-
-So if liveness checked the model, one bad artifact would restart-loop every pod
-in the cluster — turning a configuration problem into an outage, and destroying
-the evidence, because containers would die before anyone could exec in. Splitting
-them means a bad artifact degrades the service in a controlled, debuggable way.
-
-**Liveness answers "should I be killed?" Readiness answers "should I get
-traffic?"** Anything an operator could fix without a restart belongs in readiness.
-
-### Known limitations
-
-The tokenizer is `[A-Za-z0-9]+`, so it discards every non-ASCII character before
-the model sees anything. Internationalized domains are stripped to almost nothing
-and score as phishing — `пример.рф/login` returns 0.9934. That matters more than
-an ordinary accuracy gap, because IDN homograph attacks are themselves a phishing
-technique, so the model is blind in a phishing-relevant area.
-
-The same cause makes short URLs score high, since there is little evidence either
-way: `google.com` is 0.3861, but `google.com/search?q=weather` drops to 0.0036.
-
-Neither is fixed. Both are documented, because shipping a detector without
-knowing where it fails is worse than the failures.
-
-**42 tests** cover the service. They were validated by mutation testing —
-deliberately breaking the code and confirming the suite catches it.
 
 ---
 
