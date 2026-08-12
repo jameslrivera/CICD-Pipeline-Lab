@@ -138,7 +138,8 @@ curl -s --get --data-urlencode "url=paypal.co.uk.secure-login.verify-account.tk/
 Each control is checked against the built image rather than assumed from the
 Dockerfile:
 
-<img width="930" height="139" alt="Screenshot 2026-08-12 at 6 40 39 PM" src="https://github.com/user-attachments/assets/d9e871b3-9864-42e4-8089-40bac3848643" />
+<img width="1110" height="134" alt="Screenshot 2026-08-12 at 6 45 27 PM" src="https://github.com/user-attachments/assets/54c847fd-8a7d-4aa6-b3c7-20a70ac637a2" />
+
 
 
 
