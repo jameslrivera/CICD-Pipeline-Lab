@@ -214,19 +214,25 @@ kubectl port-forward -n phishing-detector svc/phishing-detector 8080:8000
 
 The image ships `threshold: 0.5`. The ConfigMap supplies `0.30`. A running pod
 reports `0.30` — which proves it reads the ConfigMap, not the copy baked into
-its own image:
+its own image.
+
+The effect is real, not cosmetic. This is a genuine phishing URL from the
+dataset — a car parts site hosting a fake Google Mail login page — and it scores
+0.4899, just under the default cutoff:
 
 ```bash
-curl -s localhost:8080/readyz
-# {"status":"ready","threshold":0.3}
+# Running locally, image default of 0.5 — missed
+curl -s --get --data-urlencode "url=car-accessories.co.in/googlemail.htm" localhost:8090/predict
+# {"phishing":false,"probability":0.4899,"threshold":0.5}
 
-curl -s --get --data-urlencode "url=google.com" localhost:8080/predict
-# {"url":"google.com","phishing":true,"probability":0.3861,"threshold":0.3}
+# In the cluster, ConfigMap value of 0.3 — caught
+curl -s --get --data-urlencode "url=car-accessories.co.in/googlemail.htm" localhost:8080/predict
+# {"phishing":true,"probability":0.4899,"threshold":0.3}
 ```
 
-Same image, same probability as Section 2 — but `google.com` is now flagged,
-because only the cutoff moved. Detection was retuned without rebuilding or
-redeploying anything.
+Same image, same model, same probability. Only the cutoff moved — and a real
+phishing page went from missed to caught, with no rebuild and no redeploy. That
+is the tuning an analyst does when attacks are slipping through.
 
 ### The NetworkPolicy was silently doing nothing
 
