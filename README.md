@@ -211,37 +211,18 @@ A NetworkPolicy is a firewall rule for pods. I wrote one denying all traffic
 except DNS and the API port, applied it, and `kubectl` confirmed it existed.
 
 It filtered nothing. kind's default network plugin has **no NetworkPolicy
-controller** — Kubernetes still stores the rule, because enforcement is the
+controller** — Kubernetes stores the rule anyway, since enforcement is the
 plugin's job, so every command reported success while traffic flowed freely.
 
-I caught it by testing enforcement instead of trusting the manifest: the same
-connection attempt from a restricted namespace and an unrestricted one.
+I found it by testing enforcement instead of trusting the manifest: the same
+connection attempt from a restricted namespace and an unrestricted one returned
+the same result. The cluster now installs Calico, where the restricted namespace
+correctly times out.
 
-```
-1. BASELINE - no policy            -> CONNECTED
-2. EGRESS - default-deny namespace -> BLOCKED (TimeoutError)
-3. DNS - explicitly allowed        -> DNS OK
-```
+**A security control that does not work is worse than no control** — it produces
+confidence without protection.
 
-Under the default plugin, test 2 returned `CONNECTED` — identical to the
-baseline. The cluster now installs Calico, and the results above are from it.
-
-**A security control that does not work is worse than no control**, because it
-produces confidence without protection.
-
-### What the Deployment enforces
-
-| Control | Effect |
-| ------- | ------ |
-| `runAsNonRoot`, `runAsUser: 10001` | Refuses to start if the image would run as root |
-| `readOnlyRootFilesystem: true` | Container filesystem is immutable at runtime |
-| `allowPrivilegeEscalation: false` | Process cannot gain privileges it did not start with |
-| `capabilities: drop: [ALL]` | Starts with zero Linux capabilities |
-| Pod Security Admission `restricted` | The namespace rejects any pod that violates the above |
-
-The last row is what makes the others real. Without it every setting is
-voluntary — I confirmed the API server would admit a `privileged` pod with the
-host filesystem mounted until that label existed.
+---
 
 ## 4. Terraform and Helm
 
