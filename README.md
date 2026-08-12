@@ -104,10 +104,71 @@ Results:
 
 ## 2. Containerization
 
-A multi-stage image: the builder installs dependencies into a virtualenv, and the
-runtime stage receives only the finished result, so pip's caches and build
-artifacts never ship. Final size is 594MB, most of it scikit-learn, scipy, and
-numpy.
+I used Docker to package the model, libraries, and dependencies into one image,
+so the service runs identically on any machine without installing Python or
+anything else.
+
+The build is multi-stage: the first stage installs dependencies into a
+virtualenv, and the second copies only the finished result. Pip's caches and
+build tooling never reach the shipped image. Final size is 594MB, most of it
+scikit-learn, scipy, and numpy.
+
+### Building and running it
+
+```bash
+cd phishing-detector && docker build -t phishing-detector:0.1.0 .
+```
+
+```bash
+docker run --rm --read-only -p 8091:8000 phishing-detector:0.1.0
+```
+
+`--read-only` makes the container filesystem immutable. The app is built to
+tolerate it, which is verified here rather than discovered later in Kubernetes.
+
+The endpoints answer exactly as they did running locally — the container changed
+how it ships, not what it does:
+
+```bash
+curl -s localhost:8091/readyz
+```
+```json
+{"status":"ready","threshold":0.5}
+```
+
+```bash
+curl -s --get --data-urlencode "url=paypal.co.uk.secure-login.verify-account.tk/cgi-bin/webscr" localhost:8091/predict
+```
+```json
+{"url":"paypal.co.uk.secure-login.verify-account.tk/cgi-bin/webscr","phishing":true,"probability":1.0,"threshold":0.5}
+```
+
+### Verifying the hardening
+
+Each control is checked against the built image rather than assumed from the
+Dockerfile:
+
+```bash
+docker run --rm phishing-detector:0.1.0 id
+```
+```
+uid=10001(app) gid=10001(app) groups=10001(app)
+```
+
+```bash
+docker run --rm phishing-detector:0.1.0 sh -c 'pip --version; python -m pip --version'
+```
+```
+sh: 1: pip: not found
+/opt/venv/bin/python: No module named pip
+```
+
+```bash
+docker exec <container> touch /app/test
+```
+```
+touch: cannot touch '/app/test': Read-only file system
+```
 
 | Control | Why |
 | ------- | --- |
