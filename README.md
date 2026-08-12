@@ -56,12 +56,12 @@ I used the Python FastAPI framework to define the endpoints and a uvicorn server
 
 ### Running it locally
 
-Install dependencies and start the server:
+Install dependencies:
 
 ```bash
 cd phishing-detector && python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 ```
-
+Run the server:
 ```bash
 .venv/bin/uvicorn app.main:app --port 8090
 ```
