@@ -186,42 +186,36 @@ kubectl port-forward -n phishing-detector svc/phishing-detector 8080:8000
 
 ### Proving the ConfigMap is what gets read
 
-The image ships `threshold: 0.5`. The ConfigMap supplies `0.30`. A running pod
-reports `0.30` — which proves it reads the ConfigMap, not the copy baked into
-its own image.
+The image ships `threshold: 0.5`. The ConfigMap supplies `0.30`, and a running
+pod reports `0.30` — proving it reads the ConfigMap, not its own image layer.
 
-The effect is real, not cosmetic. This is a genuine phishing URL from the
-dataset — a car parts site hosting a fake Google Mail login page — and it scores
-0.4899, just under the default cutoff:
+The effect is real. This is a genuine phishing URL from the dataset — a car parts
+site hosting a fake Google Mail login — scoring just under the default cutoff:
 
 ```bash
-# Running locally, image default of 0.5 — missed
+# Locally, image default 0.5 — missed
 curl -s --get --data-urlencode "url=car-accessories.co.in/googlemail.htm" localhost:8090/predict
 # {"phishing":false,"probability":0.4899,"threshold":0.5}
 
-# In the cluster, ConfigMap value of 0.3 — caught
+# In the cluster, ConfigMap 0.3 — caught
 curl -s --get --data-urlencode "url=car-accessories.co.in/googlemail.htm" localhost:8080/predict
 # {"phishing":true,"probability":0.4899,"threshold":0.3}
 ```
 
-Same image, same model, same probability. Only the cutoff moved — and a real
-phishing page went from missed to caught, with no rebuild and no redeploy. That
-is the tuning an analyst does when attacks are slipping through.
+Same image, same probability. Only the cutoff moved, and a real phishing page
+went from missed to caught with no rebuild and no redeploy.
 
 ### The NetworkPolicy was silently doing nothing
 
 A NetworkPolicy is a firewall rule for pods. I wrote one denying all traffic
 except DNS and the API port, applied it, and `kubectl` confirmed it existed.
 
-It filtered nothing.
+It filtered nothing. kind's default network plugin has **no NetworkPolicy
+controller** — Kubernetes still stores the rule, because enforcement is the
+plugin's job, so every command reported success while traffic flowed freely.
 
-kind's default network plugin has **no NetworkPolicy controller**. Kubernetes
-still accepts and stores the rule, because enforcement is the plugin's job — so
-every command reported success while traffic flowed freely.
-
-I caught it by testing enforcement instead of trusting the manifest: running the
-same connection attempt from a restricted namespace and an unrestricted one, and
-comparing.
+I caught it by testing enforcement instead of trusting the manifest: the same
+connection attempt from a restricted namespace and an unrestricted one.
 
 ```
 1. BASELINE - no policy            -> CONNECTED
@@ -230,8 +224,7 @@ comparing.
 ```
 
 Under the default plugin, test 2 returned `CONNECTED` — identical to the
-baseline. The cluster now installs Calico, and the results above are from that
-cluster.
+baseline. The cluster now installs Calico, and the results above are from it.
 
 **A security control that does not work is worse than no control**, because it
 produces confidence without protection.
