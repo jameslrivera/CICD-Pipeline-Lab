@@ -178,39 +178,6 @@ touch: cannot touch '/app/test': Read-only file system
 | Exact version pins | A build that resolves different versions on different days is not reproducible |
 | Thread pools pinned to 1 | scikit-learn sizes pools from the *host* CPU count and oversubscribes against a cgroup limit |
 
-### The UID is numeric on purpose
-
-Kubernetes `runAsNonRoot` must verify the user is not root *before* starting the
-container, and it cannot resolve a username against `/etc/passwd` without running
-the image first. A named user fails with `container has runAsNonRoot and image
-has non-numeric user`. So the Dockerfile writes `USER 10001:10001` as a number,
-and the Deployment asserts the same number.
-
-### pip was in the image twice
-
-The Dockerfile originally claimed pip never shipped. It did — `python -m venv`
-installs pip into the virtualenv, and the whole virtualenv was being copied.
-
-After removing that copy, `pip --version` **still worked**, because
-`python:3.12-slim` carries a second installation at
-`/usr/local/lib/python3.12/site-packages/pip` that remains on `PATH`. Both had to
-go. It now reports `pip: not found` and `No module named pip`.
-
-This was only found by checking rather than trusting the comment. The check is
-one command; the assumption had been confidently wrong.
-
-### The scikit-learn pin is load-bearing
-
-The model artifact is a pickle of fitted scikit-learn objects. Deserializing
-under a different version warns at best and breaks at worst, so the pin must
-match the version that produced the file — which the training script now records
-in `metrics.json`.
-
-Relatedly, `joblib.load()` executes arbitrary code during unpickling. Loading an
-untrusted model file is equivalent to running an untrusted binary. Here the
-artifact is built by this repository's own training script and travels inside the
-image, but that is a property to protect deliberately rather than assume.
-
 ---
 
 ## 3. Kubernetes
