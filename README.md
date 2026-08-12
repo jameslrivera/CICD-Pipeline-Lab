@@ -296,7 +296,8 @@ terraform -chdir=terraform/app state list
 terraform -chdir=terraform/cluster-local state list
 ```
 
-<!-- paste your screenshot here -->
+<img width="1191" height="184" alt="Screenshot 2026-08-12 at 7 46 24 PM" src="https://github.com/user-attachments/assets/5e95e9b5-8300-475f-872d-277557077296" />
+
 
 Terraform owns the kind cluster, the Calico install, the namespace, and the Helm
 release. Helm owns the seven Kubernetes objects inside it.
