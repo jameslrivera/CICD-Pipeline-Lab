@@ -228,18 +228,19 @@ restart.
 
 ## 4. Terraform and Helm
 
-Everything up to this point was built by typing commands. That works until you
-need to rebuild it, hand it to someone else, or prove what is actually deployed.
-Terraform and Helm turn those commands into files.
+I used Helm to package the Kubernetes manifests into one chart, and Terraform to
+create the cluster and install that chart.
 
-**Helm** packages the Kubernetes manifests into a chart — templates plus a values
-file. The templates never change between environments; only the values do.
+Up to this point I built everything by running commands by hand. That works once,
+but it is not repeatable and there is no record of what was actually deployed.
+Now the whole setup lives in files: `terraform apply` builds it, `terraform
+destroy` removes it.
 
-**Terraform** creates the infrastructure itself and installs that chart. The
-cluster and the deployment are described in code, so `terraform apply` builds
-them and `terraform destroy` removes them.
+Helm turns the manifests into templates with the changeable values pulled out
+into a separate file. Instead of editing seven YAML files to change one setting,
+I edit one value and Helm regenerates the rest.
 
-I split it into two layers on purpose:
+I split the Terraform into two layers:
 
 ```
 terraform/
