@@ -284,6 +284,46 @@ and found no differences, so no changes are needed.
 That final check is the point. Configuration that cannot converge will fight you
 forever.
 
+### Proof it is actually managing the cluster
+
+Helm reports the release it deployed, and Terraform reports every resource it
+owns — so the running app is genuinely managed by these files, not deployed by
+hand and described afterwards:
+
+```bash
+helm list -n phishing-detector
+```
+```
+NAME                NAMESPACE           REVISION   STATUS     CHART
+phishing-detector   phishing-detector   1          deployed   phishing-detector-0.1.0
+```
+
+```bash
+terraform -chdir=terraform/app state list
+```
+```
+helm_release.phishing_detector
+kubernetes_namespace_v1.app
+kubernetes_namespace_v1.clients[0]
+```
+
+```bash
+terraform -chdir=terraform/cluster-local state list
+```
+```
+kind_cluster.this
+null_resource.calico
+```
+
+### In the CI/CD pipeline
+
+Both are validated on every push rather than executed: the pipeline runs
+`terraform fmt -check` and `terraform validate` on both layers, and `helm lint`
+plus `helm template` on the chart. That catches syntax errors, missing values,
+and templates that render invalid YAML before they ever reach a cluster.
+Deployment stays manual here, because a hosted runner cannot reach a cluster
+running on a laptop.
+
 ### Drift detection has a blind spot
 
 Terraform is supposed to notice when reality stops matching the code. It does —
