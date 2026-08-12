@@ -1,41 +1,14 @@
-# NetworkPolicies are the cluster's equivalent of firewall rules, with two
-# properties that surprise people coming from traditional firewalls:
-#
-# 1. They are ALLOW-only and purely additive. There is no "deny" rule. You
-#    create a default-deny by writing a policy that selects pods but lists no
-#    permitted traffic, and then you add allow policies alongside it. The
-#    effective permission is the union of every policy that selects the pod.
-# 2. They do nothing at all unless the CNI plugin implements them. The API
-#    server accepts and stores a NetworkPolicy regardless. "kubectl apply
-#    succeeded" is NOT evidence that traffic is being filtered — which is why
-#    this phase tests enforcement empirically instead of trusting the manifest.
-#
-# ---------------------------------------------------------------------------
-# Policy 1: default-deny everything, both directions.
-# ---------------------------------------------------------------------------
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: default-deny-all
   namespace: phishing-detector
 spec:
-  # An empty podSelector selects EVERY pod in the namespace. Combined with the
-  # empty rule lists below, this is the "deny by default" baseline.
   podSelector: {}
   policyTypes:
     - Ingress
     - Egress
-  # No ingress: or egress: keys at all means no traffic is permitted in either
-  # direction. Everything below this point re-opens exactly what is needed.
 ---
-# ---------------------------------------------------------------------------
-# Policy 2: allow DNS egress.
-# ---------------------------------------------------------------------------
-# This is the rule people forget, and its absence produces the most confusing
-# failure in Kubernetes networking. With egress denied, a pod cannot reach
-# CoreDNS, so every hostname lookup hangs until it times out. The symptom is not
-# "connection refused" — it is a service that appears to hang for 5 seconds and
-# then fails with a name resolution error, which looks like an application bug.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -49,8 +22,6 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
-              # kube-system carries this label automatically. CoreDNS lives
-              # there, so this is "let pods talk to the DNS namespace".
               kubernetes.io/metadata.name: kube-system
           podSelector:
             matchLabels:
@@ -58,14 +29,9 @@ spec:
       ports:
         - protocol: UDP
           port: 53
-        # TCP/53 matters for responses too large for a UDP datagram. Allowing
-        # only UDP works until it suddenly does not.
         - protocol: TCP
           port: 53
 ---
-# ---------------------------------------------------------------------------
-# Policy 3: allow ingress to the API port.
-# ---------------------------------------------------------------------------
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -78,24 +44,6 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Only namespaces explicitly labelled as clients may reach the API.
-    #
-    # An earlier version of this file had no `from:` at all, which means "from
-    # anywhere" — every pod in every namespace could call /predict and /info
-    # unauthenticated. The comment justifying that claimed a narrower rule would
-    # block the kubelet's liveness and readiness probes, because probes
-    # originate from the node's IP rather than from the pod network.
-    #
-    # That justification was tested and is FALSE on Calico. A pod matching no
-    # ingress-allow policy at all still passed its HTTP readiness probe and
-    # reached Ready, because Calico does not apply workload ingress policy to
-    # traffic from the local host — which is exactly where probes come from. So
-    # ingress can be restricted without breaking health checking.
-    #
-    # Worth knowing that this is CNI-specific behaviour rather than something
-    # the NetworkPolicy spec guarantees. On a CNI that does subject host traffic
-    # to workload policy, probes would need an explicit allowance — so verify it
-    # on the CNI you actually run rather than trusting this comment.
     - from:
         - namespaceSelector:
             matchLabels:

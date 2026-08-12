@@ -1,13 +1,3 @@
-# GitLab CI pipeline.
-#
-# Same stages as .github/workflows/ci.yml, deliberately. Having both files side
-# by side is the point: the work is identical, and what differs is the platform.
-# The differences are called out inline rather than in a separate document.
-#
-# Why GitLab matters here specifically: it self-hosts, so the whole pipeline can
-# run inside an air-gapped enclave with no egress to github.com. That is why it
-# tends to be the CI platform in DoD environments, and why the same pipeline is
-# expressed twice.
 
 stages:
   - lint
@@ -18,28 +8,14 @@ stages:
 variables:
   PYTHON_VERSION: "3.12"
   IMAGE_NAME: phishing-detector
-  # GitLab injects a container registry per project. No account setup, no
-  # separate credential — $CI_REGISTRY_IMAGE, $CI_REGISTRY_USER and
-  # $CI_JOB_TOKEN all exist automatically and the token dies with the job.
   IMAGE_TAG: $CI_REGISTRY_IMAGE/$IMAGE_NAME
 
-# --------------------------------------------------------------------------
-# DIFFERENCE 1: where the execution environment comes from.
-#
-# GitHub Actions gives you a VM with a large pre-installed toolchain, and you
-# add languages with setup-* actions. GitLab gives you a container per job and
-# you name the image. That is more explicit and more reproducible — the job
-# either declares its toolchain or it does not run — and it is why GitLab
-# pipelines port cleanly into an air-gapped registry mirror.
-# --------------------------------------------------------------------------
 .python:
   image: python:3.12-slim-bookworm
   before_script:
     - cd phishing-detector
     - pip install --quiet -r requirements-dev.txt
   cache:
-    # Keyed on the requirements file, so an unchanged dependency set reuses the
-    # cache instead of re-downloading scikit-learn and scipy every run.
     key:
       files:
         - phishing-detector/requirements-dev.txt
@@ -57,16 +33,10 @@ test:
   extends: .python
   stage: test
   script:
-    # The model artifact is committed, so the integration tests must actually
-    # run rather than skip. A green pipeline that silently tested no model is
-    # worse than a red one.
     - test -s model/phishing_nb.joblib
     - pytest -q --junitxml=report.xml
   artifacts:
     when: always
-    # DIFFERENCE 2: GitLab parses JUnit XML natively and renders failures in the
-    # merge request UI. GitHub Actions needs a third-party action for the same
-    # thing.
     reports:
       junit: phishing-detector/report.xml
 
@@ -74,14 +44,10 @@ chart:
   stage: test
   image:
     name: alpine/helm:3.16.3
-    # The helm image sets helm as its entrypoint; clearing it lets `script:`
-    # run a normal shell. This trips people up the first time.
     entrypoint: [""]
   script:
     - helm lint charts/phishing-detector -f charts/phishing-detector/values-local.yaml
     - helm template phishing-detector charts/phishing-detector -f charts/phishing-detector/values-local.yaml
-    # A template can render perfectly valid YAML that quietly dropped a security
-    # control, and nothing else in the pipeline would notice.
     - |
       rendered=$(helm template phishing-detector charts/phishing-detector -f charts/phishing-detector/values-local.yaml)
       for control in "runAsNonRoot: true" "readOnlyRootFilesystem: true" "allowPrivilegeEscalation: false" "runAsUser: 10001" "automountServiceAccountToken: false"; do
@@ -95,32 +61,12 @@ terraform:
     name: hashicorp/terraform:1.15
     entrypoint: [""]
   script:
-    # -check fails rather than rewriting. In CI you want to be told the
-    # formatting is wrong, not have it silently fixed in a throwaway workspace.
     - terraform fmt -check -recursive terraform/
     - terraform -chdir=terraform/cluster-local init -backend=false
     - terraform -chdir=terraform/cluster-local validate
     - terraform -chdir=terraform/app init -backend=false
     - terraform -chdir=terraform/app validate
 
-# --------------------------------------------------------------------------
-# DIFFERENCE 3: building a container image.
-#
-# GitHub Actions has a first-party buildx action and a Docker daemon already
-# running on the runner. GitLab jobs are themselves containers, so building an
-# image means either Docker-in-Docker (below) or a daemonless builder.
-#
-# In a DoD enclave you would likely reach for Buildah or Kaniko instead: both
-# build without a privileged daemon, which matters when the cluster policy
-# forbids privileged containers — exactly the policy this project's own
-# NetworkPolicy and Pod Security Admission enforce. Phase 7 covers Buildah on
-# Rocky Linux, which is the RHEL-native path.
-# --------------------------------------------------------------------------
-# NOT named `image`. `image` is a reserved top-level keyword in GitLab CI, so a
-# job by that name is parsed as the global image directive instead — GitLab
-# rejects the entire file with "image name should be a string" and creates zero
-# jobs. GitHub Actions has no equivalent collision, which is precisely why an
-# unrun pipeline is not a verified one.
 build:image:
   stage: build
   image: docker:27-cli
@@ -135,8 +81,6 @@ build:image:
     - cd phishing-detector
     - docker build -t "$IMAGE_NAME:ci" .
 
-    # The checks that matter, run against the built artifact rather than
-    # asserted in a README. Each has failed for real in this project's history.
     - |
       uid=$(docker run --rm "$IMAGE_NAME:ci" id -u)
       test "$uid" = "10001" || { echo "expected uid 10001, got $uid"; exit 1; }
@@ -156,13 +100,6 @@ build:image:
       echo "serves correctly under a read-only root filesystem"
       docker rm -f smoke
 
-    # DIFFERENCE 4: push conditions.
-    #
-    # GitHub Actions uses `if:` on a step. GitLab uses `rules:` on a job, and
-    # the syntax reads more like a policy than a conditional. Either way the
-    # intent is identical: a merge request builds and smoke-tests the image but
-    # must never publish it, or anyone who can open an MR can publish to your
-    # registry namespace.
     - |
       if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
         echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
@@ -174,17 +111,6 @@ build:image:
         echo "not on $CI_DEFAULT_BRANCH — built and tested, not pushed"
       fi
 
-# --------------------------------------------------------------------------
-# Deploy is a dry run, and honestly so.
-#
-# The only cluster is a kind cluster on a laptop, which a hosted runner cannot
-# reach. Rendering the chart proves the manifests are valid; it does not prove
-# they apply. A pipeline that claimed to deploy and did not would be the same
-# class of lie as a NetworkPolicy that stores cleanly and filters nothing.
-#
-# On a self-hosted runner inside the same network as the cluster — the normal
-# DoD arrangement — this job becomes a real `helm upgrade --install`.
-# --------------------------------------------------------------------------
 deploy:dry-run:
   stage: deploy
   image:

@@ -1,23 +1,11 @@
-# Default values. Everything here is overridable per environment; the templates
-# themselves contain no environment-specific facts, which is the whole reason
-# the manifests were moved into a chart.
-#
-# values-local.yaml overrides these for the kind cluster. A values-cloud.yaml
-# would override them for AKS without any template changing.
 
 replicaCount: 2
 
 image:
   repository: phishing-detector
   tag: "0.1.0"
-  # IfNotPresent is correct for kind, where images are side-loaded with
-  # `kind load` and no registry exists to pull from. A cloud values file would
-  # set Always, or better, pin a digest.
   pullPolicy: IfNotPresent
 
-# Detection policy. This becomes the ConfigMap that mounts over the copy baked
-# into the image, and the app re-reads it on every request — so changing this
-# value and upgrading the release retunes detection without rebuilding anything.
 detector:
   threshold: 0.5
 
@@ -28,13 +16,8 @@ service:
 serviceAccount:
   create: true
   name: ""
-  # The application never calls the Kubernetes API, so it should not be handed
-  # a credential for it.
   automountToken: false
 
-# Requests were set by measurement, not estimate: the container's working set is
-# ~110 MiB with a ~117 MiB peak. The request is deliberately above that to leave
-# room for load, and the limit well above to leave room for a Python heap.
 resources:
   requests:
     cpu: 100m
@@ -43,8 +26,6 @@ resources:
     cpu: 500m
     memory: 512Mi
 
-# Three probes answering three different questions. See the deployment template
-# for why liveness and readiness deliberately disagree.
 probes:
   startup:
     periodSeconds: 2
@@ -73,20 +54,14 @@ containerSecurityContext:
 
 networkPolicy:
   enabled: true
-  # Only namespaces carrying this label may reach the API. Leaving it empty
-  # would mean no one can, which is a safer default than "everyone".
   clientNamespaceSelector:
     detector-client: allowed
-  # CoreDNS lives in kube-system. Without an explicit DNS allowance, every
-  # hostname lookup hangs until it times out and presents as an application bug.
   dnsNamespace: kube-system
 
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
 
-# Force replicas onto separate nodes. See the deployment template for why
-# matchLabelKeys is required here rather than optional.
 topologySpread:
   enabled: true
   maxSkew: 1

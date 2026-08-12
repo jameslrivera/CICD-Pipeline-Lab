@@ -1,14 +1,4 @@
 {{- if .Values.networkPolicy.enabled -}}
-{{/*
-NetworkPolicies are ALLOW-only and purely additive — there is no deny rule. A
-default-deny is a policy that selects pods but permits nothing, and allow
-policies are layered alongside it; the effective permission is the union.
-
-They also do nothing unless the CNI implements them. The API server stores a
-NetworkPolicy regardless, so "kubectl apply succeeded" is not evidence that any
-packet is being filtered. kind's default CNI (kindnet) has no policy controller
-at all, which is why this cluster installs Calico instead.
-*/}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -16,19 +6,11 @@ metadata:
   labels:
     {{- include "phishing-detector.labels" . | nindent 4 }}
 spec:
-  # An empty podSelector selects every pod in the namespace. With no ingress or
-  # egress keys below, nothing is permitted in either direction.
   podSelector: {}
   policyTypes:
     - Ingress
     - Egress
 ---
-{{/*
-The rule people forget. With egress denied and no DNS exception, every hostname
-lookup hangs until it times out — presenting as a service that stalls for
-seconds and then fails resolving a name, which looks exactly like an application
-bug rather than a firewall rule.
-*/}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -40,10 +22,6 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # namespaceSelector and podSelector are in the SAME list element, so they
-    # are ANDed: "the kube-dns pods, in kube-system". Splitting them into two
-    # elements ORs them instead and grants egress to every pod in kube-system —
-    # a common and quiet mistake.
     - to:
         - namespaceSelector:
             matchLabels:
@@ -54,24 +32,9 @@ spec:
       ports:
         - protocol: UDP
           port: 53
-        # TCP/53 carries responses too large for a UDP datagram. Allowing only
-        # UDP works right up until it does not.
         - protocol: TCP
           port: 53
 ---
-{{/*
-Ingress, restricted to namespaces carrying the client label.
-
-An earlier version omitted `from:` entirely — meaning any pod in any namespace
-could call /predict and /info unauthenticated — justified by a claim that a
-narrower rule would block kubelet probes, since probes come from the node IP.
-That was tested and is false on Calico, which does not apply workload ingress
-policy to host-sourced traffic. Verified: an unlabelled namespace is blocked, a
-labelled one succeeds, and pods stay Ready with zero restarts.
-
-This is CNI-specific behaviour rather than a guarantee of the spec, so it is
-worth re-verifying on whichever CNI you actually run.
-*/}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

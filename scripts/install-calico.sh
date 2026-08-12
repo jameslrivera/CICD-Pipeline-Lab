@@ -1,18 +1,4 @@
 #!/usr/bin/env bash
-# Install Calico as the cluster CNI, with an IP pool that matches kind's
-# podSubnet.
-#
-# Two reasons this is a script rather than a documented kubectl one-liner.
-#
-# First, kind's default CNI (kindnet) ships no NetworkPolicy controller. The API
-# server accepts and stores a NetworkPolicy regardless, so `kubectl apply`,
-# `kubectl get`, and `kubectl describe` all report success while traffic the
-# policy claims to deny flows freely. Calico actually enforces it.
-#
-# Second, Calico's IP pool and kind's podSubnet are independent settings that
-# must agree. Calico defaults to 192.168.0.0/16; kind-config.yaml deliberately
-# uses 100.64.0.0/16 to avoid colliding with a real LAN. Applying the stock
-# manifest would hand pods addresses from a pool the cluster does not route.
 set -euo pipefail
 
 CALICO_VERSION="${CALICO_VERSION:-v3.32.1}"
@@ -25,10 +11,6 @@ trap 'rm -rf "$workdir"' EXIT
 echo "Fetching Calico ${CALICO_VERSION}..."
 curl -fsSL "$MANIFEST_URL" -o "$workdir/calico.yaml"
 
-# The stock manifest ships CALICO_IPV4POOL_CIDR commented out. Uncomment it and
-# set the value, so the pool is correct on first start — the pool is created
-# when calico-node first runs and is not re-read afterwards, so patching the
-# DaemonSet later would be too late.
 python3 - "$workdir/calico.yaml" "$POD_CIDR" <<'PY'
 import re
 import sys
@@ -49,8 +31,6 @@ open(path, "w").write(text)
 print(f"  set CALICO_IPV4POOL_CIDR={cidr}")
 PY
 
-# Server-side apply: the Calico CRDs exceed the 256KB annotation limit that
-# client-side apply uses to store last-applied state.
 kubectl apply --server-side -f "$workdir/calico.yaml"
 
 echo "Waiting for Calico to become ready..."

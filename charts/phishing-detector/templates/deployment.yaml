@@ -1,13 +1,3 @@
-{{/*
-A Deployment manages a ReplicaSet, and the ReplicaSet keeps N identical pods
-alive. That indirection is what makes rolling updates work: changing the pod
-template creates a NEW ReplicaSet and shifts pods across a few at a time.
-
-Note what is deliberately ABSENT here: a checksum/config annotation. Most charts
-add one so that editing a ConfigMap forces a rollout. This one must not, because
-the app re-reads its threshold on every request — a rollout would defeat the
-entire point of being able to retune detection without restarting anything.
-*/}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,8 +14,6 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      # Never drop below the desired count, and add at most one extra pod at a
-      # time: start a new pod, wait for its readiness probe, then remove an old.
       maxUnavailable: 0
       maxSurge: 1
 
@@ -46,23 +34,10 @@ spec:
           labelSelector:
             matchLabels:
               {{- include "phishing-detector.selectorLabels" . | nindent 14 }}
-          # Without this, the constraint deadlocks every rollout on a two-node
-          # cluster, silently: maxSurge creates a third pod while two run
-          # one-per-node, and counting all three against maxSkew: 1 leaves no
-          # legal node. The Deployment just sits with a Pending pod reporting
-          # "didn't match pod topology spread constraints".
-          #
-          # matchLabelKeys scopes the skew calculation to pods sharing a
-          # pod-template-hash, so each ReplicaSet is balanced against itself
-          # rather than against the revision it is replacing.
           matchLabelKeys:
             - pod-template-hash
       {{- end }}
 
-      # Applies to every container in the pod. runAsNonRoot is the check that
-      # requires a NUMERIC user in the Dockerfile — Kubernetes cannot resolve a
-      # username against /etc/passwd before starting the image, so a named user
-      # fails with "image has non-numeric user".
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
 
@@ -78,59 +53,35 @@ spec:
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
 
-          # Requests are what the scheduler uses to find a node with room.
-          # Limits are what the kernel enforces: exceed memory and the container
-          # is OOMKilled, exceed CPU and it is throttled rather than killed.
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
 
-          # "Has it finished booting?" Importing scikit-learn and deserializing
-          # the model takes about 0.6s. While this is failing, liveness does not
-          # run at all — without it, a slow start is indistinguishable from a
-          # hung process and the kubelet kills the container before it serves.
           startupProbe:
             httpGet:
               path: /healthz
               port: http
             {{- toYaml .Values.probes.startup | nindent 12 }}
 
-          # "Is it wedged?" Failing this restarts the container. It hits
-          # /healthz, which ignores the model and config, so a bad ConfigMap can
-          # never cause a cluster-wide restart loop.
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
             {{- toYaml .Values.probes.liveness | nindent 12 }}
 
-          # "Should it get traffic?" Failing this removes the pod from the
-          # Service endpoints but leaves it running and debuggable. This one
-          # hits /readyz, which loads the config and scores a canary URL.
           readinessProbe:
             httpGet:
               path: /readyz
               port: http
             {{- toYaml .Values.probes.readiness | nindent 12 }}
 
-          # Endpoint removal and SIGTERM are delivered concurrently. This pause
-          # keeps the container serving for a few seconds after Kubernetes
-          # decides to remove it, so in-flight requests finish instead of being
-          # reset on every rollout.
           lifecycle:
             preStop:
               exec:
                 command: ["sleep", "{{ .Values.preStopSleepSeconds }}"]
 
           volumeMounts:
-            # readOnlyRootFilesystem leaves the process nowhere to write.
-            # Nothing writes on the request path today, but tempfile, upload
-            # spooling and joblib memmaps all reach for /tmp, and that failure
-            # surfaces as an opaque 500. tmpfs, so nothing survives a restart.
             - name: tmp
               mountPath: /tmp
-            # Mounted as a DIRECTORY, not a single file via subPath. subPath
-            # mounts are copied once and never resynced by the kubelet, which
-            # would silently break the live-retune design.
             - name: config
               mountPath: /app/config
               readOnly: true

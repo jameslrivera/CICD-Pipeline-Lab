@@ -1,10 +1,3 @@
-# These outputs describe the cluster in terms ANY cluster can be described in —
-# a kubeconfig path and a context name — rather than in kind-specific terms.
-#
-# The app layer takes the same two values as plain input variables and does not
-# read this state at all. Wiring it with a remote_state data source would be
-# more "correct" Terraform and would also weld the app layer to kind, which is
-# exactly what this split exists to prevent.
 
 output "cluster_name" {
   description = "Name of the created cluster."

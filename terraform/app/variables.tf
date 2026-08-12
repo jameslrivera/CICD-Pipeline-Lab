@@ -1,5 +1,3 @@
-# These two are the entire coupling between this layer and whatever cluster it
-# targets. Point them at AKS and this directory works unchanged.
 variable "kubeconfig_path" {
   description = "Path to the kubeconfig for the target cluster."
   type        = string

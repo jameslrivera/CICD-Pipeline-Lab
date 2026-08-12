@@ -1,21 +1,4 @@
-"""Train the phishing URL classifier and write a servable artifact.
-
-This is an OFFLINE step. It is deliberately not part of the container image and
-never runs at request time — the image ships the fitted artifact, not the data
-or the training code.
-
-Corrections over the original notebook, all of which were inflating the reported
-scores:
-
-1. The vectorizer is fitted inside a Pipeline, so it only ever sees the training
-   split. Fitting a scaler or vectorizer on the full dataset before splitting
-   leaks test-set statistics into training.
-2. Duplicate URLs are dropped before the split. The raw dataset has ~7.7%
-   duplicates; if the same URL lands in both splits, the model is being scored
-   on rows it memorized.
-3. The split is stratified and seeded, so the run is reproducible and both
-   splits carry the same class balance.
-"""
+"""Train the classifier and write the artifact."""
 
 from __future__ import annotations
 
@@ -44,34 +27,21 @@ from sklearn.pipeline import Pipeline
 
 SEED = 42
 
-# URLs are not prose. Splitting on runs of alphanumerics turns
-# "paypal.co.uk/cgi-bin/webscr" into [paypal, co, uk, cgi, bin, webscr], which is
-# where the signal lives — brand names in the path, suspicious TLDs, hex blobs.
-#
-# Known limitation: this is ASCII-only, so internationalized domains are stripped
-# to almost nothing and score as phishing. See README "Known limitations".
+# url tokens
 TOKEN_PATTERN = r"[A-Za-z0-9]+"
 
-# If fewer than this fraction of the file's rows survive parsing and cleaning,
-# something is wrong with the dataset and training should stop rather than
-# quietly fit on whatever is left.
+# minimum usable rows
 MIN_SURVIVAL_FRACTION = 0.90
 
 
 def load_dataset(csv_path: Path) -> pd.DataFrame:
-    # Count physical lines first, so we can tell how much the parser discarded.
-    # Without a baseline there is no way to notice that a corrupt file silently
-    # became a much smaller dataset.
+    # baseline row count
     with csv_path.open(encoding="utf-8", errors="replace") as handle:
         physical_rows = max(sum(1 for _ in handle) - 1, 0)
     if physical_rows == 0:
         raise SystemExit(f"{csv_path} contains no data rows")
 
-    # index_col=False matters far more than it looks. Without it, a row with
-    # MORE fields than the header makes pandas promote the leading columns into
-    # the DataFrame index and shift every value left — so URL and Label keep
-    # their names but silently hold the trailing junk instead. The rows are not
-    # skipped, they are corrupted, and on_bad_lines does not save you.
+    # index_col=False prevents shifting
     frame = pd.read_csv(
         csv_path,
         index_col=False,
@@ -92,9 +62,7 @@ def load_dataset(csv_path: Path) -> pd.DataFrame:
     frame = frame[frame["Label"].isin(["good", "bad"])]
     usable = len(frame)
 
-    # Drop exact duplicate rows first. Anything still duplicated on URL alone is
-    # the same URL carrying CONFLICTING labels, and keeping whichever pandas saw
-    # first is a coin flip on ground truth — worth reporting, not hiding.
+    # drop duplicates
     frame = frame.drop_duplicates(subset=["URL", "Label"])
     conflicting = int(frame.duplicated(subset=["URL"], keep=False).sum())
     frame = frame.drop_duplicates(subset=["URL"]).reset_index(drop=True)
@@ -136,12 +104,7 @@ def build_pipeline(max_features: int, min_df: int, alpha: float) -> Pipeline:
 
 
 def verify_round_trip(pipeline: Pipeline, path: Path, sample: list[str]) -> None:
-    """Confirm the artifact just written deserializes and predicts identically.
-
-    The pinned scikit-learn version exists because this artifact is a pickle. A
-    pickle that dumps cleanly but reloads wrong should be caught here, at build
-    time, rather than as a 503 in production.
-    """
+    """Verify the artifact reloads identically."""
     reloaded = joblib.load(path)
     before = pipeline.predict_proba(sample)[:, 1]
     after = reloaded.predict_proba(sample)[:, 1]
@@ -177,8 +140,7 @@ def main() -> None:
     probabilities = pipeline.predict_proba(x_test)[:, 1]
     predictions = (probabilities >= 0.5).astype(int)
 
-    # Always-predict-the-majority-class. Any model that cannot beat this by a
-    # clear margin is not doing useful work, however good its accuracy looks.
+    # majority-class baseline
     baseline = 1.0 - y_test.mean()
 
     metrics = {
@@ -192,9 +154,7 @@ def main() -> None:
         "recall": round(float(recall_score(y_test, predictions)), 4),
         "f1": round(float(f1_score(y_test, predictions)), 4),
         "roc_auc": round(float(roc_auc_score(y_test, probabilities)), 4),
-        # Recorded because the artifact is a pickle: deserializing under a
-        # different scikit-learn build warns at best and breaks at worst, and
-        # without this there is no way to tell what produced the file.
+        # provenance
         "versions": {
             "python": sys.version.split()[0],
             "scikit_learn": sklearn.__version__,

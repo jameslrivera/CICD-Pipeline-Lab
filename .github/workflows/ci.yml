@@ -1,9 +1,3 @@
-# GitHub Actions pipeline.
-#
-# Stages, in order: lint -> test -> build image -> push to registry -> deploy
-# dry-run. The deploy stage renders the Helm chart rather than applying it,
-# because the only cluster is a kind cluster on a laptop and a hosted runner
-# cannot reach it. That is a real constraint, not a shortcut — see the README.
 name: CI
 
 on:
@@ -11,18 +5,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  # Lets the pipeline be run by hand from the Actions tab, which is useful when
-  # debugging the pipeline itself rather than the code.
   workflow_dispatch:
 
-# Cancel a run when a newer commit lands on the same branch. Without this, a
-# quick series of pushes leaves several redundant runs competing for minutes.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Least privilege by default. Individual jobs widen this only where they must —
-# the image job needs packages: write to push, and nothing else needs anything.
 permissions:
   contents: read
 
@@ -31,9 +19,6 @@ env:
   IMAGE_NAME: phishing-detector
 
 jobs:
-  # ---------------------------------------------------------------------
-  # Lint and test the application.
-  # ---------------------------------------------------------------------
   test:
     name: Lint and test
     runs-on: ubuntu-latest
@@ -47,38 +32,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          # Caches the pip download directory keyed on the requirements files,
-          # so an unchanged dependency set does not re-download scikit-learn and
-          # scipy on every run.
           cache: pip
           cache-dependency-path: phishing-detector/requirements-dev.txt
 
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
-      # Lint before test. Both are cheap, but a lint failure is a one-line fix
-      # and there is no reason to spend test minutes discovering it afterwards.
       - name: Lint (ruff)
         run: ruff check .
 
       - name: Check formatting (ruff)
         run: ruff format --check .
 
-      # The model artifact is committed, so the integration tests must actually
-      # run rather than skip. They are written to fail — not skip — if the
-      # artifact is missing, because a green pipeline that silently tested no
-      # model is worse than a red one.
       - name: Verify the model artifact is present
         run: test -s model/phishing_nb.joblib
 
       - name: Test (pytest)
         run: pytest -q
 
-  # ---------------------------------------------------------------------
-  # Validate the Helm chart. Runs in parallel with the tests — a chart error
-  # has nothing to do with the Python code and there is no reason to serialise
-  # them.
-  # ---------------------------------------------------------------------
   chart:
     name: Validate Helm chart
     runs-on: ubuntu-latest
@@ -91,14 +62,9 @@ jobs:
       - name: Lint chart
         run: helm lint charts/phishing-detector -f charts/phishing-detector/values-local.yaml
 
-      # Rendering catches template errors that lint does not — a bad range, a
-      # missing value, malformed YAML after substitution.
       - name: Render chart (deploy dry-run)
         run: helm template phishing-detector charts/phishing-detector -f charts/phishing-detector/values-local.yaml
 
-      # Assert the rendered output actually carries the security controls. A
-      # template can render valid YAML that quietly dropped runAsNonRoot, and
-      # nothing else in this pipeline would notice.
       - name: Assert hardening survives templating
         run: |
           rendered=$(helm template phishing-detector charts/phishing-detector -f charts/phishing-detector/values-local.yaml)
@@ -107,10 +73,6 @@ jobs:
           done
           echo "all security controls present in rendered output"
 
-  # ---------------------------------------------------------------------
-  # Validate the Terraform. Formatting and syntax only — no cloud credentials
-  # are involved and nothing is planned against a real cluster.
-  # ---------------------------------------------------------------------
   terraform:
     name: Validate Terraform
     runs-on: ubuntu-latest
@@ -122,9 +84,6 @@ jobs:
         with:
           terraform_wrapper: false
 
-      # -check makes this fail rather than rewrite. In CI you want to be told
-      # the formatting is wrong, not to have it silently corrected in a
-      # workspace that is thrown away.
       - name: Check formatting
         run: terraform fmt -check -recursive terraform/
 
@@ -138,9 +97,6 @@ jobs:
           terraform -chdir=terraform/app init -backend=false
           terraform -chdir=terraform/app validate
 
-  # ---------------------------------------------------------------------
-  # Build the image, prove it runs, then push.
-  # ---------------------------------------------------------------------
   image:
     name: Build and push image
     runs-on: ubuntu-latest
@@ -148,8 +104,6 @@ jobs:
 
     permissions:
       contents: read
-      # Required to push to the GitHub Container Registry. Scoped to this job
-      # only — the test job has no business holding a write credential.
       packages: write
 
     steps:
@@ -161,17 +115,12 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: phishing-detector
-          # Built and loaded into the runner's Docker daemon first, so the smoke
-          # test below runs against the exact image that will be pushed.
           load: true
           push: false
           tags: ${{ env.IMAGE_NAME }}:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # The checks that matter, run against the built artifact rather than
-      # asserted in a README. Each one has failed for real at some point in this
-      # project's history.
       - name: Smoke test — runs as non-root
         run: |
           uid=$(docker run --rm ${{ env.IMAGE_NAME }}:ci id -u)
@@ -193,9 +142,6 @@ jobs:
             sleep 2
           done
           curl -sf http://127.0.0.1:8000/readyz || { docker logs smoke; exit 1; }
-          # A known phishing URL must actually be classified as phishing. This
-          # is the check that would catch a corrupt or wrong model artifact
-          # shipping in an otherwise perfectly healthy image.
           verdict=$(curl -sf --get --data-urlencode \
             "url=paypal.co.uk.secure-login.verify-account.tk/cgi-bin/webscr" \
             http://127.0.0.1:8000/predict | python3 -c 'import json,sys; print(json.load(sys.stdin)["phishing"])')
@@ -203,17 +149,12 @@ jobs:
           echo "serves correctly read-only, and flags a known phish"
           docker rm -f smoke
 
-      # Only main gets pushed. A pull request builds and smoke-tests the image
-      # but must not publish it — otherwise anyone opening a PR can publish to
-      # your registry namespace.
       - name: Log in to GitHub Container Registry
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          # Provided automatically by Actions; scoped to this repository and
-          # this run. No long-lived registry credential is stored anywhere.
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push image

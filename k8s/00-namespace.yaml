@@ -1,35 +1,11 @@
-# A namespace is a scope boundary inside the cluster. Names only have to be
-# unique within one, and — more usefully here — NetworkPolicies, resource quotas,
-# and RBAC rules all attach to a namespace. Putting the workload in its own
-# namespace means "deny all traffic in this namespace" is a sentence we can
-# actually write.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: phishing-detector
   labels:
-    # A NetworkPolicy can only select a namespace by its labels, never by name.
-    # Kubernetes sets kubernetes.io/metadata.name automatically, but an explicit
-    # label makes the intent visible in this file rather than implied.
     name: phishing-detector
 
-    # Pod Security Admission. Without these, every securityContext setting in
-    # the Deployment is voluntary — the API server will happily admit a pod
-    # with privileged: true, hostNetwork: true, and hostPath: / mounted, which
-    # is node root plus the kubelet's credentials.
-    #
-    # This was verified, not assumed: before these labels existed, a deliberately
-    # hostile pod spec was submitted with --dry-run=server and came back
-    # "created". Hardening a workload while leaving the namespace unenforced
-    # protects only against your own honest mistakes, not against a compromised
-    # pipeline or a careless kubectl apply.
-    #
-    # "restricted" is the strictest built-in profile. The Deployment already
-    # complies with it as written, so enforcement costs nothing here and turns
-    # documentation into a control.
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: latest
-    # audit and warn stay on so that a rejected pod produces a readable warning
-    # and an audit entry rather than only a terse admission error.
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted

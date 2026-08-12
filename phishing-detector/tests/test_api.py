@@ -1,10 +1,4 @@
-"""Tests for phishing-detector.
-
-Most tests use a stub model with a fixed probability. That is deliberate: it
-makes the API's behavior — thresholding, validation, readiness — testable without
-depending on what the real classifier happens to think about a given URL. The
-integration tests at the bottom exercise the real committed artifact.
-"""
+"""API behavior tests."""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -101,9 +95,6 @@ def test_readyz_returns_503_when_model_failed_to_load(config, monkeypatch):
 
 
 def test_readyz_returns_503_when_the_model_loads_but_cannot_score(config, monkeypatch):
-    # The failure this catches: a wrong artifact deserializes perfectly and then
-    # 500s on every real request. Without a canary score, readiness would pass
-    # and Kubernetes would route traffic to a pod that cannot serve.
     assert _client_with(SingleClassModel(), monkeypatch).get("/readyz").status_code == 503
 
 
@@ -131,10 +122,6 @@ def test_readyz_returns_503_for_invalid_threshold_config(client, config, text):
 
 @pytest.mark.parametrize("word", ["yes", "on", "true"])
 def test_boolean_threshold_is_rejected_rather_than_coerced(client, config, word):
-    # YAML resolves these to True, and float(True) is 1.0 — a threshold that
-    # flags almost nothing. Coercing would mean a one-word typo silently
-    # disables detection while readiness still reports healthy. Failing open is
-    # the worst outcome for a detector, so this must be a hard 503.
     config(f"threshold: {word}\n")
     assert client.get("/readyz").status_code == 503
 
@@ -169,9 +156,6 @@ def test_predict_clears_a_url_below_the_threshold(config, monkeypatch):
 
 
 def test_probability_exactly_equal_to_the_threshold_is_flagged(config, monkeypatch):
-    # The boundary is >=, not >. Pinning it stops the comparison silently
-    # flipping, and stops the verdict disagreeing with the number reported
-    # alongside it.
     config("threshold: 0.5\n")
     body = (
         _client_with(StubModel(0.5), monkeypatch)
@@ -184,9 +168,6 @@ def test_probability_exactly_equal_to_the_threshold_is_flagged(config, monkeypat
 
 
 def test_verdict_agrees_with_the_probability_that_is_reported(config, monkeypatch):
-    # A model value just under the threshold must not round up to the threshold
-    # in the response while the verdict says "not phishing". The rounded number
-    # is what a caller can reproduce, so it is what the verdict is computed on.
     config("threshold: 0.5\n")
     body = (
         _client_with(StubModel(0.49999), monkeypatch)
@@ -206,8 +187,6 @@ def test_probability_is_reported_to_four_decimals(config, monkeypatch):
 
 
 def test_threshold_change_flips_the_verdict_without_touching_the_model(client, config):
-    # This is the ConfigMap behavior the whole design exists for: the model's
-    # probability is unchanged, only the policy applied to it moves.
     before = client.get("/predict", params={"url": "http://evil.tk/login"}).json()
     assert before["phishing"] is True
 
@@ -226,8 +205,6 @@ def test_predict_returns_503_when_the_model_is_unavailable(config, monkeypatch):
 
 
 def test_predict_does_not_disclose_internal_paths(config, monkeypatch, tmp_path):
-    # These endpoints are unauthenticated. A 503 body should not hand a caller
-    # the container's filesystem layout or scikit-learn internals.
     monkeypatch.setattr(main, "MODEL", None)
     monkeypatch.setattr(main, "MODEL_ERROR", "model artifact unavailable")
     monkeypatch.setattr(main, "CONFIG_PATH", tmp_path / "nope.yaml")
@@ -252,14 +229,11 @@ def test_predict_rejects_a_url_one_character_over_the_limit(client):
 
 
 def test_predict_rejects_a_repeated_url_parameter(client):
-    # Starlette keeps the last value. A proxy or access log reading the first
-    # would record a different URL than the one actually scored.
     response = client.get("/predict?url=safe.example&url=evil.example")
     assert response.status_code == 400
 
 
 def test_predict_requires_the_url_parameter(client):
-    # FastAPI's own validation returns 422 for a missing required query param.
     assert client.get("/predict").status_code == 422
 
 
@@ -319,13 +293,7 @@ def test_real_artifact_loads_and_scores(config):
     ["www.wikipedia.org/wiki/Cat", "nytimes.com", "amazon.com", "usa.gov", "cisa.gov"],
 )
 def test_known_good_domains_stay_below_the_shipped_threshold(config, url):
-    """A retrain must not silently start flagging these.
-
-    The list is deliberately limited to domains the current model clears at 0.30
-    — the threshold the ConfigMap ships. Short bare domains such as google.com
-    and irs.gov do NOT clear it; that is a documented limitation, not something
-    this test pretends away.
-    """
+    """Known-good domains must not flag."""
     if main.MODEL is None:
         pytest.fail(f"model artifact failed to load: {main.MODEL_ERROR}")
 

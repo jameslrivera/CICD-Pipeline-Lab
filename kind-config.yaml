@@ -1,54 +1,14 @@
-# kind ("Kubernetes IN Docker") runs each cluster node as a Docker container
-# rather than a VM or a real machine. The control-plane node runs the API server,
-# scheduler, and controller-manager; the workers just run workloads.
-#
-# Two workers is the smallest number that makes scheduling observable — with one
-# node, "the scheduler placed these pods" is not a claim you can see. With two,
-# you can watch replicas land on different nodes and watch what happens when one
-# fills up.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: cicd-lab
 
 networking:
-  # kind's built-in CNI, kindnet, provides pod networking but has NO
-  # NetworkPolicy controller. The API server still accepts and stores a
-  # NetworkPolicy — it simply never filters a packet. That failure mode is
-  # silent and dangerous: `kubectl get networkpolicy` shows the rule, `kubectl
-  # describe` shows the rule, and traffic it claims to deny flows freely.
-  #
-  # This was confirmed empirically rather than assumed: with a default-deny
-  # egress policy applied, a pod in the namespace still opened a TCP connection
-  # to 1.1.1.1:80, exactly like a pod in an unrestricted namespace.
-  #
-  # So the default CNI is disabled and Calico is installed instead, because a
-  # security control that does not work is worse than no control — it produces
-  # confidence without protection.
   disableDefaultCNI: true
 
-  # RFC 6598 carrier-grade NAT space, chosen deliberately.
-  #
-  # Calico's documented default pool is 192.168.0.0/16, and using it here was a
-  # real bug: this laptop sits on 192.168.1.235 behind a 192.168.1.1 gateway, so
-  # the pod network swallowed the operator's own LAN. Calico installed routes for
-  # 192.168.0.0/16 and blackholed the rest, and pods could reach 1.1.1.1 but
-  # could not reach the laptop, the router, or anything else on the local
-  # network. On a corporate or DoD network — where both 192.168/16 and 10/8 are
-  # in heavy use — that presents as a private registry, database, or syslog
-  # collector being mysteriously unreachable from pods only.
-  #
-  # 100.64.0.0/10 exists precisely to avoid this collision and is almost never
-  # used on a LAN. This value must match CALICO_IPV4POOL_CIDR in the Calico
-  # install (see scripts/install-calico.sh) — they are two independent settings
-  # that have to agree, not one deriving from the other.
   podSubnet: "100.64.0.0/16"
 
 nodes:
   - role: control-plane
-    # Pinned by digest, not just tag. A tag can be repointed at new content;
-    # a digest is the content. This is the same discipline as pinning the
-    # application's Python dependencies — a cluster that comes up as a different
-    # Kubernetes version next month is not a reproducible environment.
     image: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
   - role: worker
     image: kindest/node:v1.36.1@sha256:3489c7674813ba5d8b1a9977baea8a6e553784dab7b84759d1014dbd78f7ebd5
