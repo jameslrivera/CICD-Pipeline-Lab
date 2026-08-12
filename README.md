@@ -3,13 +3,13 @@
 [![CI](https://github.com/jameslrivera/CICD-Pipeline-Lab/actions/workflows/ci.yml/badge.svg)](https://github.com/jameslrivera/CICD-Pipeline-Lab/actions/workflows/ci.yml)
 
 **Personal DevOps pipeline project built using Docker, Kubernetes, Terraform,
-Helm, and GitLab.**
+Helm, and GitLab CI.**
 
 ---
 
 ## Background
 
-   As the software engineering lifestyle is updated and teams work together more efficiently it’s a necessity to understand the tools and procedures involved in Software Development and IT Operations. This includes Containerization, container orchestration, CI/CD automation, Infrastructure as Code and Automating and Scripting. This project tackles each of those concepts and their associated tools.
+   As the software engineering lifecycle is updated and teams need to work more efficiently together it’s a necessity to understand the tools and procedures involved in Software Development and IT Operations. This includes Containerization, Container Orchestration, CI/CD Automation, Infrastructure as Code and Automating and Scripting. This project tackles each of those concepts and their associated tools.
 
 ---
 
