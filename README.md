@@ -505,7 +505,11 @@ Neither pipeline stores a registry credential. Actions uses the run-scoped
       layer. `k8s/` converted to a Helm chart with environment-agnostic
       templates.
 - [x] **Phase 5 — CI/CD.** GitHub Actions and GitLab CI side by side, same
-      stages, so the platform differences are explicit.
+      stages, so the platform differences are explicit. The Actions pipeline is
+      verified green and publishing to ghcr.io. The GitLab pipeline is written
+      and YAML-valid but **has not been executed** — it is marked as such rather
+      than assumed to work, for the same reason the NetworkPolicy in Phase 3 is
+      documented as having been silently unenforced.
 - [ ] **Phase 6 — Supply chain.** Trivy gate on HIGH/CRITICAL, CycloneDX SBOM,
       Checkov on the Terraform, Cosign signing — including the model artifact.
 - [ ] **Phase 7 — Podman/Buildah** on Rocky Linux (the RHEL-native toolchain).
