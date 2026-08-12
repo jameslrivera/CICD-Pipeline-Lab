@@ -486,13 +486,27 @@ Neither pipeline stores a registry credential. Actions uses the run-scoped
 `GITHUB_TOKEN` with `packages: write` granted to the image job alone; GitLab uses
 `CI_JOB_TOKEN`, which dies with the job. Nothing long-lived exists to leak.
 
-### Honest status
+### Both pipelines are verified green
 
-The Actions pipeline is **verified green** across consecutive runs and publishing
-to ghcr.io. The GitLab pipeline is written and YAML-valid but **has not been
-executed**, because it needs a GitLab account to run against. It is labelled as
-such rather than assumed to work — which is the same discipline the rest of this
-project applies to controls that look correct.
+The Actions pipeline runs on GitHub and publishes to ghcr.io. The GitLab pipeline
+runs at [jameslrivera-group/cicd-pipeline-lab](https://gitlab.com/jameslrivera-group/cicd-pipeline-lab)
+and publishes to the GitLab container registry. All six GitLab jobs pass.
+
+Getting the GitLab side to run was worth more than writing it. The file was
+YAML-valid, mirrored the working Actions pipeline stage for stage, and had been
+committed as correct — and it could not create a single job.
+
+The cause was a GitLab-specific trap with no GitHub Actions equivalent: the build
+job was named `image`, which is a **reserved top-level keyword**. GitLab parsed
+the job as the global image directive, found a map where it expected a string,
+and rejected the entire file with `image name should be a string`. The result was
+a pipeline with zero jobs that failed in the same millisecond it was created —
+and the API reported `yaml_errors: null`, so the real message existed only on the
+pipeline page.
+
+Renaming it to `build:image` fixed it. Nothing about that is discoverable by
+reading the file, which is the whole argument for running a pipeline rather than
+shipping one that looks right.
 
 ---
 
@@ -561,7 +575,7 @@ CICD-Pipeline-Lab/
 | 2. Containerization | Complete — verified under a read-only root filesystem |
 | 3. Kubernetes | Complete — NetworkPolicy enforcement verified, not assumed |
 | 4. Terraform and Helm | Complete — both layers converge cleanly |
-| 5. CI/CD | GitHub Actions verified green; GitLab CI written but not yet executed |
+| 5. CI/CD | Complete — both pipelines verified green and publishing to their registries |
 
 Optional follow-on work: supply-chain controls (Trivy, SBOM, Checkov, Cosign),
 a Podman/Buildah rebuild on Rocky Linux, one deliberate cloud deployment, and
