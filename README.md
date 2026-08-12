@@ -228,86 +228,91 @@ restart.
 
 ## 4. Terraform and Helm
 
-The manifests became a Helm chart whose templates contain no environment-specific
-facts, and the infrastructure moved into two Terraform layers:
+Everything up to this point was built by typing commands. That works until you
+need to rebuild it, hand it to someone else, or prove what is actually deployed.
+Terraform and Helm turn those commands into files.
+
+**Helm** packages the Kubernetes manifests into a chart — templates plus a values
+file. The templates never change between environments; only the values do.
+
+**Terraform** creates the infrastructure itself and installs that chart. The
+cluster and the deployment are described in code, so `terraform apply` builds
+them and `terraform destroy` removes them.
+
+I split it into two layers on purpose:
 
 ```
 terraform/
-├── cluster-local/   # kind provider — expected to be replaced wholesale for cloud
-└── app/             # kubernetes + helm providers — must NOT change when it is
+├── cluster-local/   # creates the kind cluster — replaced entirely for cloud
+└── app/             # namespace + Helm release — unchanged by that swap
 ```
 
-The app layer takes a kubeconfig path and a context name and nothing else. It
-deliberately does **not** read the cluster layer's state through a
-`terraform_remote_state` data source — that would be tidier Terraform and would
-also weld it to kind, defeating the entire purpose of the split. Point those two
-variables at AKS and the directory works unchanged.
+The app layer takes only a kubeconfig path and a context name. Point those two
+variables at a cloud cluster and the directory works unchanged, which is the
+whole reason for the split.
 
-Calico is installed by a `null_resource` shelling out to the same script a human
-would run. The alternatives are worse: a `kubernetes_manifest` per Calico object
-means vendoring thousands of lines of CRDs, and it fails on the first plan
-because those CRDs do not exist yet.
+### Running it
 
-The chart deliberately **omits** the `checksum/config` annotation most charts
-add. That annotation forces a rollout when a ConfigMap changes, which would
-defeat the live-retune design the application was built around.
+```bash
+terraform -chdir=terraform/cluster-local init
+terraform -chdir=terraform/cluster-local apply
+
+kind load docker-image phishing-detector:0.1.0 --name cicd-lab
+
+terraform -chdir=terraform/app init
+terraform -chdir=terraform/app apply
+```
+
+The `kind load` between them is a real manual step: kind nodes cannot see images
+on the host machine. On a cloud cluster this becomes a registry push.
 
 ### The Terraform loop
 
-`init` downloads providers and writes the dependency lock. `fmt` rewrites to
-canonical style. `validate` checks syntax and types without touching the cluster.
-`plan -out=tfplan` saves a decision to a file, and `apply tfplan` replays exactly
-that decision — no re-planning, so nothing can change between review and
-execution. Running `plan` again afterwards should report **"No changes. Your
-infrastructure matches the configuration."** That final check is the point: a
-configuration that cannot converge will fight you forever.
+`init` downloads providers. `fmt` formats. `validate` checks syntax without
+touching the cluster. `plan` shows what would change. `apply` makes it happen.
 
-`.terraform.lock.hcl` is committed deliberately — it pins provider versions *and*
-hashes, and it is what makes `terraform init` reproducible for anyone else. State
-files and `.tfvars` are gitignored, because state holds resource attributes in
-plaintext including anything marked sensitive.
+Then `plan` again — a correct configuration should report no changes:
 
-### Drift detection does not work the way you would assume
-
-The most interesting result of this phase. Two drift experiments, opposite
-outcomes:
-
-```console
-$ kubectl scale deployment/phishing-detector --replicas=4
-$ terraform plan
-  No changes. Your infrastructure matches the configuration.    # ← running 4, config says 2
-
-$ kubectl label namespace phishing-detector pod-security.kubernetes.io/enforce-
-$ terraform plan
-  # kubernetes_namespace_v1.app will be updated in-place
-      + "pod-security.kubernetes.io/enforce" = "restricted"
-  Plan: 0 to add, 1 to change, 0 to destroy.
+```bash
+terraform -chdir=terraform/app plan
+```
+```
+Terraform has compared your real infrastructure against your configuration
+and found no differences, so no changes are needed.
 ```
 
-Terraform caught the namespace label because `kubernetes_namespace_v1` is a
-resource it manages **directly** — it reads the live object and compares. It
-missed the replica count because `helm_release` tracks the *release*: its chart
-version, its values, its revision, not the Kubernetes objects the release
-produced. Nobody changed the values, so from Terraform's point of view nothing
-drifted.
+That final check is the point. Configuration that cannot converge will fight you
+forever.
 
-This matters beyond the lab. "We manage it in Terraform" is widely taken to mean
-"Terraform will correct anything that changes," and for anything behind a
-`helm_release` that is false. A `kubectl scale`, a `kubectl edit`, or a sidecar
-injected by a mutating webhook all survive `terraform plan` in silence.
-Reconciling requires `terraform apply -replace=helm_release.phishing_detector`; a
-plain apply will not do it.
+### Drift detection has a blind spot
 
-### A near-miss worth recording
+Terraform is supposed to notice when reality stops matching the code. It does —
+but only for resources it manages directly.
 
-The `tehcyx/kind` provider writes a kubeconfig named `<cluster>-config` into the
-module directory as an undeclared side effect. It contains a client certificate,
-client key, and CA data — working cluster-admin credentials — and it was staged
-for commit before a pre-commit scan caught it. Nothing in the Terraform
-configuration mentions that the file exists, which is exactly why it is worth
-checking what a new provider leaves behind.
+I scaled the deployment by hand to 4 replicas and asked Terraform to check:
 
----
+```bash
+kubectl scale deployment/phishing-detector -n phishing-detector --replicas=4
+terraform -chdir=terraform/app plan
+# No changes. Your infrastructure matches the configuration.
+```
+
+Nothing. But removing a label from the namespace was caught immediately:
+
+```bash
+kubectl label namespace phishing-detector pod-security.kubernetes.io/enforce-
+terraform -chdir=terraform/app plan
+# + "pod-security.kubernetes.io/enforce" = "restricted"
+# Plan: 0 to add, 1 to change, 0 to destroy.
+```
+
+The namespace is a Terraform resource, so it reads the live object and compares.
+The deployment sits behind a Helm release, and Terraform only tracks the
+release's chart and values — not the objects it produced.
+
+**"We manage it in Terraform" does not mean Terraform will fix it.** Anything
+behind a Helm release needs `terraform apply -replace=helm_release.<name>` to
+reconcile.
 
 ## 5. CI/CD
 
