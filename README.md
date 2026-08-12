@@ -117,30 +117,18 @@ scikit-learn, scipy, and numpy.
 
 ```bash
 cd phishing-detector && docker build -t phishing-detector:0.1.0 .
-```
-
-```bash
 docker run --rm --read-only -p 8091:8000 phishing-detector:0.1.0
 ```
 
 `--read-only` makes the container filesystem immutable. The app is built to
-tolerate it, which is verified here rather than discovered later in Kubernetes.
+tolerate it, verified here rather than discovered later in Kubernetes.
 
-The endpoints answer exactly as they did running locally — the container changed
-how it ships, not what it does:
-
-```bash
-curl -s localhost:8091/readyz
-```
-```json
-{"status":"ready","threshold":0.5}
-```
+The endpoints answer exactly as they did locally — containerizing changed how it
+ships, not what it does:
 
 ```bash
 curl -s --get --data-urlencode "url=paypal.co.uk.secure-login.verify-account.tk/cgi-bin/webscr" localhost:8091/predict
-```
-```json
-{"url":"paypal.co.uk.secure-login.verify-account.tk/cgi-bin/webscr","phishing":true,"probability":1.0,"threshold":0.5}
+# {"url":"paypal.co.uk...","phishing":true,"probability":1.0,"threshold":0.5}
 ```
 
 ### Verifying the hardening
@@ -150,24 +138,13 @@ Dockerfile:
 
 ```bash
 docker run --rm phishing-detector:0.1.0 id
-```
-```
-uid=10001(app) gid=10001(app) groups=10001(app)
-```
+# uid=10001(app) gid=10001(app) groups=10001(app)
 
-```bash
-docker run --rm phishing-detector:0.1.0 sh -c 'pip --version; python -m pip --version'
-```
-```
-sh: 1: pip: not found
-/opt/venv/bin/python: No module named pip
-```
+docker run --rm phishing-detector:0.1.0 pip --version
+# sh: 1: pip: not found
 
-```bash
 docker exec <container> touch /app/test
-```
-```
-touch: cannot touch '/app/test': Read-only file system
+# touch: cannot touch '/app/test': Read-only file system
 ```
 
 | Control | Why |
