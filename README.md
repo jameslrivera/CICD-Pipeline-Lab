@@ -1,27 +1,26 @@
 # CICD-Pipeline-Lab
 
-**A DevSecOps pipeline built end to end around a real security application —
-containerized, hardened, orchestrated, provisioned as code, and automated.**
+[![CI](https://github.com/jameslrivera/CICD-Pipeline-Lab/actions/workflows/ci.yml/badge.svg)](https://github.com/jameslrivera/CICD-Pipeline-Lab/actions/workflows/ci.yml)
+
+**Personal DevOps pipeline project built using Docker, Kubernetes, Terraform,
+Helm, and GitHub Actions.**
 
 ---
 
 ## Background
 
-Modern security work is increasingly about the pipeline that delivers software,
-not just the software itself. An application can be written perfectly and still
-ship as a container running as root, deployed by a manifest nobody reviewed,
-onto a cluster with no policy enforcement, by a pipeline that nobody can audit.
-Most of the meaningful controls — least privilege, immutability, network
-segmentation, provenance, reproducibility — live in that delivery path.
+As the software engineering lifecycle is updated and teams work together more
+efficiently, it's a necessity to understand the tools and procedures involved in
+Software Development and IT Operations. This includes containerization, container
+orchestration, CI/CD automation, Infrastructure as Code, and automation and
+scripting. This project tackles each of those concepts and their associated
+tools.
 
-This project builds that delivery path once, deliberately, and documents what
-broke along the way.
-
-The application is a phishing URL classifier: a FastAPI service that scores a URL
-using a Naive Bayes model trained on roughly 507,000 labeled URLs. It is a
-genuine security tool, and it is also intentionally the *smallest* part of this
-repository. It exists to be something worth protecting, so that every control
-applied to it is applied for a real reason.
+The application at the center of it is a phishing URL classifier: a FastAPI
+service that scores a URL using a Naive Bayes model trained on roughly 507,000
+labeled URLs. It is a genuine security tool, and it is also intentionally the
+*smallest* part of this repository. It exists to be something worth protecting,
+so that every control applied to it is applied for a real reason.
 
 The architectural decision the whole lab is built around is the separation of the
 **model** from the **policy**. The trained model is an immutable artifact baked
@@ -36,27 +35,27 @@ positives spike at 2am.
 
 ## Inspiration
 
-Federal and defense cybersecurity roles converge on a common technical core:
+Reading about a stack and operating it are different things. Building the whole
+chain end to end — application, image, cluster, infrastructure code, pipeline —
+forces every layer to actually work together, and that is where the details that
+documentation skips over turn up.
 
-- **Containerization** — Docker, Podman, Buildah
-- **Container orchestration** — Kubernetes, OpenShift, Helm
-- **CI/CD automation** — GitLab, Jenkins, AWS CodeBuild
-- **Infrastructure as Code** — Terraform, Ansible, CloudFormation
-- **Linux systems** — RHEL, CentOS, Ubuntu
-- **Automation and scripting** — Bash, Python, PowerShell
+The architecture is organised around one decision: separating the **model** from
+the **policy**. The trained model is an immutable artifact baked into the
+container image, so changing it is a real release with a new build and a new
+scan. The decision threshold — the probability at which a URL is called
+phishing — is mutable configuration, re-read from disk on every request. That
+means a Kubernetes ConfigMap can retune detection sensitivity without redeploying
+the model, which is exactly what an analyst needs when false positives spike at
+2am. Almost every later phase exists to deliver, protect, or prove that split.
 
-Reading about that stack and operating it are different things. This project
-exists to close that gap by building the whole chain — application, image,
-cluster, infrastructure code, pipeline — and verifying each layer rather than
-assuming it works.
-
-That verification habit turned out to be the most valuable part. Several controls
-in this repository looked correct, applied without error, and did nothing at all.
-A NetworkPolicy was accepted by the API server and filtered no traffic. A test
-suite passed while a liveness endpoint returned 503 to every probe. A detector
-failed open on a one-word configuration typo while still reporting healthy. Each
-was found by testing the control rather than trusting it, and each is documented
-here rather than quietly fixed.
+The habit that turned out to matter most was verifying each layer instead of
+assuming it worked. Several controls in this repository looked correct, applied
+without error, and did nothing at all. A NetworkPolicy was accepted by the API
+server and filtered no traffic. A test suite passed while a liveness endpoint
+returned 503 to every probe. A detector failed open on a one-word configuration
+typo while still reporting healthy. Each was found by testing the control rather
+than trusting it, and each is documented here rather than quietly fixed.
 
 The bias throughout is toward proving things: commands that were actually run,
 output that was actually captured, and honest notes where something does not work
