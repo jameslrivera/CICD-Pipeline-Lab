@@ -166,12 +166,24 @@ control-plane and two workers, each one a Docker container.
 
 ### Verifying
 
+All three nodes report `Ready` — one control-plane and two workers, running
+Kubernetes v1.36.1:
+
+```bash
+kubectl get nodes
+```
+
 <img width="457" height="106" alt="Screenshot 2026-08-12 at 6 58 09 PM" src="https://github.com/user-attachments/assets/2a13948f-1203-4f85-a695-ac965c4f5201" />
 
 
 
 
-Two replicas, scheduled onto different workers:
+The Deployment asked for two replicas, and the scheduler placed one on each
+worker:
+
+```bash
+kubectl get pods -n phishing-detector -o wide
+```
 
 <img width="1034" height="148" alt="Screenshot 2026-08-12 at 7 07 53 PM" src="https://github.com/user-attachments/assets/357c214e-0c60-4eb0-a234-508e3a5ef6af" />
 
@@ -204,23 +216,6 @@ curl -s --get --data-urlencode "url=car-accessories.co.in/googlemail.htm" localh
 
 Same image, same probability. Only the cutoff moved, and a real phishing page
 went from missed to caught with no rebuild and no redeploy.
-
-### The NetworkPolicy was silently doing nothing
-
-A NetworkPolicy is a firewall rule for pods. I wrote one denying all traffic
-except DNS and the API port, applied it, and `kubectl` confirmed it existed.
-
-It filtered nothing. kind's default network plugin has **no NetworkPolicy
-controller** — Kubernetes stores the rule anyway, since enforcement is the
-plugin's job, so every command reported success while traffic flowed freely.
-
-I found it by testing enforcement instead of trusting the manifest: the same
-connection attempt from a restricted namespace and an unrestricted one returned
-the same result. The cluster now installs Calico, where the restricted namespace
-correctly times out.
-
-**A security control that does not work is worse than no control** — it produces
-confidence without protection.
 
 ---
 
