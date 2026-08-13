@@ -359,21 +359,22 @@ network, which is why it shows up in defense environments.
 
 ### Pipeline Flow
 
-I run `git push` and both pipelines start on their own. Nothing else to click.
-Each one then:
+```
+git push
+   │
+   ├─ lint            ruff check + format
+   ├─ test            42 tests
+   ├─ validate        helm lint, helm template, terraform validate
+   │
+   ├─ build           container image
+   ├─ smoke test      uid 10001 · no package manager · read-only fs · flags a known phish
+   ├─ publish         push to registry (main only)
+   │
+   └─ deploy          render manifests (dry run)
+```
 
-1. **Lints** the Python with ruff
-2. **Runs the 42 tests**
-3. **Checks the Helm chart and Terraform** still render and validate
-4. **Builds the container image**
-5. **Smoke-tests that image** — runs as uid 10001, has no package manager, serves
-   under a read-only filesystem, and still flags a known phishing URL
-6. **Pushes the image** to a registry, but only from `main`
-7. **Renders the manifests** as a deploy dry run
-
-If any step fails the pipeline stops and the commit is marked red. A pull request
-runs everything except the push, so an image gets built and tested but never
-published.
+A failed step stops the pipeline and marks the commit red. Pull requests run
+every stage except publish.
 
 <!-- paste GitHub Actions run screenshot here -->
 
