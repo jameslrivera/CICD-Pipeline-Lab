@@ -340,6 +340,8 @@ Both run the same four stages on every push: lint, test, build the image, and a
 deploy dry run. GitLab is included because it can be self-hosted and run in an
 air-gapped network, which is why it shows up in defense environments.
 
+<!-- paste GitHub Actions run screenshot here -->
+
 ### What the pipeline checks
 
 Anything can run `pytest`. These checks exist because each one caught something
@@ -371,6 +373,8 @@ apply. On a self-hosted runner inside the cluster's network this becomes a real
 | Test results | Needs a third-party action | Parses JUnit XML natively |
 | Conditions | `if:` on a step | `rules:` on a job |
 | Credentials | `GITHUB_TOKEN`, scoped to the run | `CI_JOB_TOKEN`, dies with the job |
+
+<!-- paste GitLab pipeline screenshot here -->
 
 Neither stores a registry credential.
 
