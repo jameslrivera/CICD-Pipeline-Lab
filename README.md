@@ -385,19 +385,13 @@ the manifests and stops. That proves they are valid; it does not prove they
 apply. On a self-hosted runner inside the cluster's network this becomes a real
 `helm upgrade --install`.
 
-### Platform Comparison
-
-| | GitHub Actions | GitLab CI |
-| --- | --- | --- |
-| Environment | A VM with tools preinstalled | A container per job, image named by you |
-| Building images | Docker daemon already running | Needs Docker-in-Docker or a daemonless builder |
-| Test results | Needs a third-party action | Parses JUnit XML natively |
-| Conditions | `if:` on a step | `rules:` on a job |
-| Credentials | `GITHUB_TOKEN`, scoped to the run | `CI_JOB_TOKEN`, dies with the job |
+Implementing both showed where the platforms differ. GitHub Actions gave me a
+virtual machine with most tooling already installed and a Docker daemon ready to
+use, while GitLab ran every job inside a container I had to specify and needed
+Docker-in-Docker to build an image. Neither pipeline stores a registry
+credential — each uses a token that is created for the run and expires with it.
 
 <!-- paste GitLab pipeline screenshot here -->
-
-Neither stores a registry credential.
 
 ---
 
