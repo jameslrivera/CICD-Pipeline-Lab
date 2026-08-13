@@ -13,11 +13,6 @@ Helm, and GitLab CI.**
 
 ---
 
-## Inspiration
-
-I was inspired to build a project that encompasses front to end of a DevOps Pipeline.
-
----
 
 ## Repository layout
 
