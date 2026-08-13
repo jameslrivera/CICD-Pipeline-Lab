@@ -168,10 +168,10 @@ Dockerfile:
 ## 3. Kubernetes
 
 Docker runs one container. Kubernetes runs and supervises many of them across
-machines — it keeps a set number alive, health-checks them, restarts what hangs,
-and enforces security and network rules on every pod.
+machines. It keeps a set number alive, health-checks them, restarts what hangs,
+and enforces security and network rules on every pod. This is an integral part of any Software Development Pipeline because it adds redundancy and reduces application downtime.
 
-I used **kind** (Kubernetes IN Docker) to run a three-node cluster locally: one
+For this project I used **kind** (Kubernetes IN Docker) to run a three-node cluster locally: one
 control-plane and two workers, each one a Docker container.
 
 <img width="1160" height="375" alt="Screenshot 2026-08-12 at 6 56 36 PM" src="https://github.com/user-attachments/assets/25211f6e-67e1-437e-942b-88bbfd4836e4" />
@@ -219,23 +219,20 @@ This is why the app was built to re-read its threshold on every request. The
 model stays immutable inside the image, while the policy applied to it is owned
 by the cluster and can change at any time.
 
-The difference is not cosmetic. Below is a real phishing URL from the dataset —
-a car parts site hosting a fake Google Mail login — scoring just under the
-default cutoff:
+An example of the importance of this technique is provided below which shows a phishing URL from the dataset being classified as a real safe URL because the threshold was too high and the URL scored just under the threshold value:
+
 
 ```bash
-# Locally, using the image's own 0.5 — missed
+# Locally, using the image's own 0.5,  missed
 curl -s --get --data-urlencode "url=car-accessories.co.in/googlemail.htm" localhost:8090/predict
 # {"phishing":false,"probability":0.4899,"threshold":0.5}
 
-# In the cluster, using the ConfigMap's 0.3 — caught
+# In the cluster, using the ConfigMap's 0.3, caught
 curl -s --get --data-urlencode "url=car-accessories.co.in/googlemail.htm" localhost:8080/predict
 # {"phishing":true,"probability":0.4899,"threshold":0.3}
 ```
 
-Same image, same model, same probability. The cluster changed the cutoff, and a
-real phishing page went from missed to caught — no rebuild, no redeploy, no
-restart.
+
 
 ---
 
@@ -344,7 +341,7 @@ behind a Helm release needs `terraform apply -replace=helm_release.<name>`.
 
 ## 5. CI/CD
 
-I built the same pipeline twice — once in GitHub Actions
+For the final phase of the Pipeline I utilized two different CI/CD platforms to I built the same pipeline twice — once in GitHub Actions
 ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) and once in GitLab CI
 ([`.gitlab-ci.yml`](.gitlab-ci.yml)) — so I could compare the two platforms
 directly.
@@ -391,7 +388,8 @@ credential — each uses a token that is created for the run and expires with it
 
 **GitLab CI** — the same pipeline, shown as its four stages.
 
-<img width="1404" height="673" alt="Screenshot 2026-08-12 at 8 37 51 PM" src="https://github.com/user-attachments/assets/186a9084-a4d1-4a24-a1e3-ce6f4fd6bddd" />
+<img width="1172" height="513" alt="Screen Shot 2026-08-13 at 12 21 27 PM" src="https://github.com/user-attachments/assets/e7f9e9d5-641f-4d51-9595-11589b1e8e88" />
+
 
 
 ---
