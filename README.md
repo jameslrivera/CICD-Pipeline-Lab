@@ -357,7 +357,7 @@ directly.
 GitLab is included because it can be self-hosted and run in an air-gapped
 network, which is why it shows up in defense environments.
 
-### What happens when I push
+### Pipeline Flow
 
 I run `git push` and both pipelines start on their own. Nothing else to click.
 Each one then:
@@ -377,7 +377,7 @@ published.
 
 <!-- paste GitHub Actions run screenshot here -->
 
-### What the pipeline checks
+### Quality Gates
 
 Anything can run `pytest`. These checks exist because each one caught something
 real in this project:
@@ -392,14 +392,14 @@ real in this project:
 The phishing check is the important one — it would catch a corrupt or wrong model
 shipping inside an image where everything else looks fine.
 
-### Deploy is a dry run
+### Deployment Stage
 
 A hosted runner cannot reach a cluster on my laptop, so the deploy stage renders
 the manifests and stops. That proves they are valid; it does not prove they
 apply. On a self-hosted runner inside the cluster's network this becomes a real
 `helm upgrade --install`.
 
-### Differences between the two platforms
+### Platform Comparison
 
 | | GitHub Actions | GitLab CI |
 | --- | --- | --- |
@@ -413,7 +413,7 @@ apply. On a self-hosted runner inside the cluster's network this becomes a real
 
 Neither stores a registry credential.
 
-### The GitLab file looked fine and could not run
+### Debugging the GitLab Pipeline
 
 It was valid YAML, mirrored the working Actions pipeline stage for stage, and I
 had committed it as correct. It produced zero jobs.
