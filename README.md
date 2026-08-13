@@ -378,21 +378,6 @@ every stage except publish.
 
 <!-- paste GitHub Actions run screenshot here -->
 
-### Quality Gates
-
-Anything can run `pytest`. These checks exist because each one caught something
-real in this project:
-
-- the image runs as uid 10001, not root
-- the image has no package manager
-- the image serves under a read-only filesystem
-- a known phishing URL is still classified as phishing
-- the rendered Helm chart still contains its security settings
-- the model artifact is present, so the tests cannot silently skip
-
-The phishing check is the important one — it would catch a corrupt or wrong model
-shipping inside an image where everything else looks fine.
-
 ### Deployment Stage
 
 A hosted runner cannot reach a cluster on my laptop, so the deploy stage renders
@@ -414,17 +399,7 @@ apply. On a self-hosted runner inside the cluster's network this becomes a real
 
 Neither stores a registry credential.
 
-### Debugging the GitLab Pipeline
-
-It was valid YAML, mirrored the working Actions pipeline stage for stage, and I
-had committed it as correct. It produced zero jobs.
-
-I had named the build job `image`, which is a reserved word in GitLab CI. GitLab
-read it as a global setting instead of a job and rejected the whole file. Nothing
-about that is visible from reading it — renaming the job to `build:image` fixed
-it.
-
-Both pipelines now pass and push to their registries.
+---
 
 ## Conclusion
 
