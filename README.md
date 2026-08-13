@@ -19,6 +19,24 @@ I was inspired to build a project that encompasses front to end of a DevOps Pipe
 
 ---
 
+## Repository layout
+
+```
+CICD-Pipeline-Lab/
+├── phishing-detector/       # the application, tests, Dockerfile, training script
+├── charts/                  # Helm chart — environment-agnostic templates
+├── k8s/                     # raw manifests (superseded by the chart, kept for reference)
+├── terraform/
+│   ├── cluster-local/       # kind provider — replaced wholesale for cloud
+│   └── app/                 # kubernetes + helm providers — unchanged by that swap
+├── scripts/                 # Calico install, keeping pod CIDRs in agreement
+├── docs/technical-notes.md  # detailed verified notes and captured output
+├── .github/workflows/ci.yml # GitHub Actions pipeline
+└── .gitlab-ci.yml           # GitLab CI pipeline
+```
+
+---
+
 ## Contents
 
 1. [Application](#1-application)
@@ -409,71 +427,13 @@ Both pipelines now pass and push to their registries.
 
 ## Conclusion
 
-The through-line across all five phases is the difference between a control being
-*configured* and a control being *effective*.
+In this project I got hands-on experience building a DevOps pipeline from start
+to finish — Docker for containerization, Kubernetes for container orchestration,
+Terraform and Helm for Infrastructure as Code, and GitHub Actions and GitLab CI
+for CI/CD automation.
 
-Three findings make the point better than any description of the architecture:
-
-**A NetworkPolicy that filtered nothing.** kind's default CNI ships no policy
-controller, but the Kubernetes API server accepts and stores a NetworkPolicy
-regardless. `kubectl apply`, `kubectl get`, and `kubectl describe` all reported
-success while traffic the policy claimed to deny flowed freely. It was found by
-running the same connection attempt in a restricted namespace and an
-unrestricted one and comparing the results.
-
-**A test suite that proved nothing.** Deliberately breaking the application in
-six different ways — including making the liveness endpoint return 503 to every
-probe — left the entire suite green. The tests asserted on response bodies and
-never on status codes.
-
-**Hardening that was purely advisory.** Every `securityContext` setting in the
-Deployment was voluntary until the namespace carried Pod Security Admission
-labels. A pod requesting `privileged: true` with the host root filesystem mounted
-was admitted by the API server without complaint.
-
-The pattern is the same each time: the artifact existed, the tooling reported
-success, and nothing was actually enforced. Silence is not evidence. The habit
-worth carrying out of this project is asking "how would I know if this were not
-working?" before considering something done — and then answering it with a test
-rather than an assumption.
-
-A secondary theme is being honest about limits. The classifier's tokenizer is
-ASCII-only, so internationalized domains are stripped of signal and score as
-phishing — which matters because homograph attacks are themselves a phishing
-technique. Short URLs regress toward the class prior. The deploy stage of both
-pipelines renders manifests rather than applying them, because a hosted runner
-cannot reach a local cluster. None of that is hidden, because a portfolio that
-overstates what it proves is worth less than one that states plainly what it
-does.
-
----
-
-## Repository layout
-
-```
-CICD-Pipeline-Lab/
-├── phishing-detector/       # the application, tests, Dockerfile, training script
-├── charts/                  # Helm chart — environment-agnostic templates
-├── k8s/                     # raw manifests (superseded by the chart, kept for reference)
-├── terraform/
-│   ├── cluster-local/       # kind provider — replaced wholesale for cloud
-│   └── app/                 # kubernetes + helm providers — unchanged by that swap
-├── scripts/                 # Calico install, keeping pod CIDRs in agreement
-├── docs/technical-notes.md  # detailed verified notes and captured output
-├── .github/workflows/ci.yml # GitHub Actions pipeline
-└── .gitlab-ci.yml           # GitLab CI pipeline
-```
-
-## Status
-
-| Phase | State |
-| ----- | ----- |
-| 1. Application | Complete — 42 tests passing |
-| 2. Containerization | Complete — verified under a read-only root filesystem |
-| 3. Kubernetes | Complete — NetworkPolicy enforcement verified, not assumed |
-| 4. Terraform and Helm | Complete — both layers converge cleanly |
-| 5. CI/CD | Complete — both pipelines verified green and publishing to their registries |
-
-Optional follow-on work: supply-chain controls (Trivy, SBOM, Checkov, Cosign),
-a Podman/Buildah rebuild on Rocky Linux, one deliberate cloud deployment, and
-in-cluster policy enforcement with Kyverno and Falco.
+The biggest thing I took away was the difference between a control being
+configured and a control being effective. A NetworkPolicy that filtered nothing,
+a test suite that passed while the health endpoint was broken, and security
+settings that were purely advisory all looked correct and reported success. Each
+one was only found by testing it instead of trusting it.
