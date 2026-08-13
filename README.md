@@ -336,9 +336,26 @@ I built the same pipeline twice — once in GitHub Actions
 ([`.gitlab-ci.yml`](.gitlab-ci.yml)) — so I could compare the two platforms
 directly.
 
-Both run the same four stages on every push: lint, test, build the image, and a
-deploy dry run. GitLab is included because it can be self-hosted and run in an
-air-gapped network, which is why it shows up in defense environments.
+GitLab is included because it can be self-hosted and run in an air-gapped
+network, which is why it shows up in defense environments.
+
+### What happens when I push
+
+I run `git push` and both pipelines start on their own. Nothing else to click.
+Each one then:
+
+1. **Lints** the Python with ruff
+2. **Runs the 42 tests**
+3. **Checks the Helm chart and Terraform** still render and validate
+4. **Builds the container image**
+5. **Smoke-tests that image** — runs as uid 10001, has no package manager, serves
+   under a read-only filesystem, and still flags a known phishing URL
+6. **Pushes the image** to a registry, but only from `main`
+7. **Renders the manifests** as a deploy dry run
+
+If any step fails the pipeline stops and the commit is marked red. A pull request
+runs everything except the push, so an image gets built and tested but never
+published.
 
 <!-- paste GitHub Actions run screenshot here -->
 
