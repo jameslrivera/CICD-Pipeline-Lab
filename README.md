@@ -341,13 +341,13 @@ behind a Helm release needs `terraform apply -replace=helm_release.<name>`.
 
 ## 5. CI/CD
 
-For the final phase of the Pipeline I utilized two different CI/CD platforms to I built the same pipeline twice — once in GitHub Actions
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) and once in GitLab CI
-([`.gitlab-ci.yml`](.gitlab-ci.yml)) — so I could compare the two platforms
-directly.
+For the final phase of the Pipeline I utilized two different CI/CD platforms to automatically build, test and deploy code changes.
 
-GitLab is included because it can be self-hosted and run in an air-gapped
-network, which is why it shows up in defense environments.
+I built the same pipeline twice, once in GitHub Actions
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) 
+and once in GitLab CI
+([`.gitlab-ci.yml`](.gitlab-ci.yml)) 
+
 
 ### Pipeline Flow
 
@@ -365,30 +365,17 @@ git push
    └─ deploy          render manifests (dry run)
 ```
 
-A failed step stops the pipeline and marks the commit red. Pull requests run
-every stage except publish.
-
-**GitHub Actions** — all four jobs green on a push to `main`.
-
-<img width="1285" height="617" alt="Screenshot 2026-08-12 at 8 55 06 PM" src="https://github.com/user-attachments/assets/4bbff01f-4a1e-4287-b42a-3a61a2272459" />
 
 
-### Deployment Stage
+**GitHub Actions**
 
-A hosted runner cannot reach a cluster on my laptop, so the deploy stage renders
-the manifests and stops. That proves they are valid; it does not prove they
-apply. On a self-hosted runner inside the cluster's network this becomes a real
-`helm upgrade --install`.
+<img width="851" height="494" alt="Screen Shot 2026-08-13 at 12 23 03 PM" src="https://github.com/user-attachments/assets/e5951264-a919-44f2-9727-3ced4295a354" />
 
-Implementing both showed where the platforms differ. GitHub Actions gave me a
-virtual machine with most tooling already installed and a Docker daemon ready to
-use, while GitLab ran every job inside a container I had to specify and needed
-Docker-in-Docker to build an image. Neither pipeline stores a registry
-credential — each uses a token that is created for the run and expires with it.
-
-**GitLab CI** — the same pipeline, shown as its four stages.
+**GitLab CI** 
 
 <img width="1172" height="513" alt="Screen Shot 2026-08-13 at 12 21 27 PM" src="https://github.com/user-attachments/assets/e7f9e9d5-641f-4d51-9595-11589b1e8e88" />
+
+
 
 
 
@@ -396,8 +383,8 @@ credential — each uses a token that is created for the run and expires with it
 
 ## Conclusion
 
-In this project I got hands-on experience building a DevOps pipeline from start
-to finish — Docker for containerization, Kubernetes for container orchestration,
+In this project I got hands on experience building a DevOps pipeline from start
+to finish.I used Docker for containerization, Kubernetes for Container Orchestration,
 Terraform and Helm for Infrastructure as Code, and GitHub Actions and GitLab CI
 for CI/CD automation.
 
