@@ -238,8 +238,10 @@ curl -s --get --data-urlencode "url=car-accessories.co.in/googlemail.htm" localh
 
 ## 4. Terraform and Helm
 
-I used Helm to package the Kubernetes manifests into one chart, and Terraform to
-create the cluster and install that chart.
+I used Helm to package the Kubernetes manifests into one chart. Helm allows the deployment configuration to vary per environment while the manifests stay the same.
+
+I used Terraform to
+create the cluster and install that chart. These two softwares improves the app's reproducibility, audibility, drift detection and speed of recovery.
 
 This puts the whole setup in files instead of commands I ran by hand.
 `terraform apply` builds the cluster and deploys the app, and `terraform destroy`
@@ -304,38 +306,6 @@ terraform -chdir=terraform/cluster-local state list
 
 <img width="1191" height="184" alt="Screenshot 2026-08-12 at 7 46 24 PM" src="https://github.com/user-attachments/assets/5e95e9b5-8300-475f-872d-277557077296" />
 
-
-Terraform owns the kind cluster, the Calico install, the namespace, and the Helm
-release. Helm owns the seven Kubernetes objects inside it.
-
-### What they do in the CI/CD pipeline
-
-The pipeline checks them instead of running them. Every push runs
-`terraform fmt -check` and `terraform validate` on both layers, and `helm lint`
-and `helm template` on the chart, so broken syntax never reaches a cluster. The
-actual deploy stays manual, since a hosted runner cannot reach my laptop.
-
-### Drift detection has a blind spot
-
-Terraform only notices changes to resources it manages directly. I scaled the
-deployment by hand and it saw nothing, but removing a namespace label was caught
-straight away:
-
-```bash
-kubectl scale deployment/phishing-detector -n phishing-detector --replicas=4
-terraform -chdir=terraform/app plan
-# No changes. Your infrastructure matches the configuration.
-
-kubectl label namespace phishing-detector pod-security.kubernetes.io/enforce-
-terraform -chdir=terraform/app plan
-# Plan: 0 to add, 1 to change, 0 to destroy.
-```
-
-The namespace is a Terraform resource. The deployment sits behind a Helm release,
-and Terraform only tracks the release's values — not the objects it created.
-
-So "it is managed in Terraform" does not mean Terraform will fix it. Anything
-behind a Helm release needs `terraform apply -replace=helm_release.<name>`.
 
 ---
 
