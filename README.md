@@ -300,41 +300,34 @@ release. Helm owns the seven Kubernetes objects inside it.
 
 ### What they do in the CI/CD pipeline
 
-In the pipeline I check them instead of running them. Every push runs
+The pipeline checks them instead of running them. Every push runs
 `terraform fmt -check` and `terraform validate` on both layers, and `helm lint`
-and `helm template` on the chart. That catches broken syntax and templates that
-render invalid YAML before they ever reach a cluster. The actual deploy stays
-manual, since a hosted runner cannot reach a cluster running on my laptop.
+and `helm template` on the chart, so broken syntax never reaches a cluster. The
+actual deploy stays manual, since a hosted runner cannot reach my laptop.
 
 ### Drift detection has a blind spot
 
-Terraform is supposed to notice when reality stops matching the code. It does —
-but only for resources it manages directly.
-
-I scaled the deployment by hand to 4 replicas and asked Terraform to check:
+Terraform only notices changes to resources it manages directly. I scaled the
+deployment by hand and it saw nothing, but removing a namespace label was caught
+straight away:
 
 ```bash
 kubectl scale deployment/phishing-detector -n phishing-detector --replicas=4
 terraform -chdir=terraform/app plan
 # No changes. Your infrastructure matches the configuration.
-```
 
-Nothing. But removing a label from the namespace was caught immediately:
-
-```bash
 kubectl label namespace phishing-detector pod-security.kubernetes.io/enforce-
 terraform -chdir=terraform/app plan
-# + "pod-security.kubernetes.io/enforce" = "restricted"
 # Plan: 0 to add, 1 to change, 0 to destroy.
 ```
 
-The namespace is a Terraform resource, so it reads the live object and compares.
-The deployment sits behind a Helm release, and Terraform only tracks the
-release's chart and values — not the objects it produced.
+The namespace is a Terraform resource. The deployment sits behind a Helm release,
+and Terraform only tracks the release's values — not the objects it created.
 
-**"We manage it in Terraform" does not mean Terraform will fix it.** Anything
-behind a Helm release needs `terraform apply -replace=helm_release.<name>` to
-reconcile.
+So "it is managed in Terraform" does not mean Terraform will fix it. Anything
+behind a Helm release needs `terraform apply -replace=helm_release.<name>`.
+
+---
 
 ## 5. CI/CD
 
