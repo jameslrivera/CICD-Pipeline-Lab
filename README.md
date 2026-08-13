@@ -331,123 +331,60 @@ behind a Helm release needs `terraform apply -replace=helm_release.<name>`.
 
 ## 5. CI/CD
 
-The same pipeline expressed twice —
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) and
-[`.gitlab-ci.yml`](.gitlab-ci.yml). Identical stages: lint, test, build, push,
-deploy dry-run. What differs is the platform, and the differences are annotated
-inline in both files rather than in a separate document.
+I built the same pipeline twice — once in GitHub Actions
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) and once in GitLab CI
+([`.gitlab-ci.yml`](.gitlab-ci.yml)) — so I could compare the two platforms
+directly.
 
-GitLab is included because it self-hosts and can run inside an air-gapped enclave
-with no egress, which is why it tends to be the CI platform in defense
-environments.
+Both run the same four stages on every push: lint, test, build the image, and a
+deploy dry run. GitLab is included because it can be self-hosted and run in an
+air-gapped network, which is why it shows up in defense environments.
 
-The Actions pipeline runs four jobs. Lint and test cover the application; chart
-validation and Terraform validation run in parallel with them, since a template
-or HCL error has nothing to do with the Python code. The image job depends on
-both passing.
+### What the pipeline checks
 
-### What the pipeline actually checks
+Anything can run `pytest`. These checks exist because each one caught something
+real in this project:
 
-Anyone can write a pipeline that runs `pytest`. These steps exist because each
-one corresponds to something that has already gone wrong in this project:
+- the image runs as uid 10001, not root
+- the image has no package manager
+- the image serves under a read-only filesystem
+- a known phishing URL is still classified as phishing
+- the rendered Helm chart still contains its security settings
+- the model artifact is present, so the tests cannot silently skip
 
-**The image must run as uid 10001** — asserted against the built artifact, not
-claimed in prose.
+The phishing check is the important one — it would catch a corrupt or wrong model
+shipping inside an image where everything else looks fine.
 
-**The image must contain no package manager** — because `pip` was present twice
-and removing only one copy left `pip install` fully working.
+### Deploy is a dry run
 
-**The image must serve under a read-only root filesystem**, which is what the
-Deployment imposes.
+A hosted runner cannot reach a cluster on my laptop, so the deploy stage renders
+the manifests and stops. That proves they are valid; it does not prove they
+apply. On a self-hosted runner inside the cluster's network this becomes a real
+`helm upgrade --install`.
 
-**A known phishing URL must be classified as phishing.** This is the check that
-would catch a corrupt or wrong model artifact shipping inside an otherwise
-perfectly healthy image, where every other check passes.
+### Differences between the two platforms
 
-**The rendered chart must still contain its security controls.** The chart job
-greps `helm template` output for `runAsNonRoot`, `readOnlyRootFilesystem`,
-`allowPrivilegeEscalation`, `runAsUser: 10001`, and
-`automountServiceAccountToken: false`. A template can render perfectly valid YAML
-that quietly dropped one of those, and nothing else would notice.
+| | GitHub Actions | GitLab CI |
+| --- | --- | --- |
+| Environment | A VM with tools preinstalled | A container per job, image named by you |
+| Building images | Docker daemon already running | Needs Docker-in-Docker or a daemonless builder |
+| Test results | Needs a third-party action | Parses JUnit XML natively |
+| Conditions | `if:` on a step | `rules:` on a job |
+| Credentials | `GITHUB_TOKEN`, scoped to the run | `CI_JOB_TOKEN`, dies with the job |
 
-**The integration tests must run, not skip.** They are written to *fail* when the
-model artifact is missing, and the pipeline separately asserts the file is
-non-empty. A green run that silently tested no model is worse than a red one.
+Neither stores a registry credential.
 
-Verified output from the run:
+### The GitLab file looked fine and could not run
 
-```console
-runs as uid 10001
-no pip present
-{"status":"ready", ...}                    ← served under --read-only
-pushing manifest for ghcr.io/jameslrivera/phishing-detector:0.1.0@sha256:b97e2953...
-```
+It was valid YAML, mirrored the working Actions pipeline stage for stage, and I
+had committed it as correct. It produced zero jobs.
 
-Images are tagged with both the version and the commit SHA, so any deployed image
-traces back to the commit that built it.
+I had named the build job `image`, which is a reserved word in GitLab CI. GitLab
+read it as a global setting instead of a job and rejected the whole file. Nothing
+about that is visible from reading it — renaming the job to `build:image` fixed
+it.
 
-### Deploy is a dry run, and says so
-
-The only cluster is a kind cluster on a laptop, which a hosted runner cannot
-reach. The deploy stage renders the chart and stops. Rendering proves the
-manifests are valid; it does not prove they apply, and a pipeline claiming to
-deploy when it does not would be the same class of untruth as a NetworkPolicy
-that stores cleanly and filters nothing.
-
-On a self-hosted runner inside the cluster's network — the normal defense
-arrangement — that job becomes a real `helm upgrade --install`.
-
-### Four differences worth being able to explain
-
-**Execution environment.** Actions hands you a VM with a large pre-installed
-toolchain and you add languages with `setup-*` actions. GitLab gives you a
-container per job and you name the image. GitLab's model is more explicit and
-ports more cleanly into an air-gapped registry mirror.
-
-**Building images.** Actions has a first-party buildx action and a Docker daemon
-already running. GitLab jobs *are* containers, so building means
-Docker-in-Docker or a daemonless builder. In an enclave you would reach for
-Buildah or Kaniko, which build without a privileged daemon — which matters when
-cluster policy forbids privileged containers, exactly the policy this project
-enforces.
-
-**Test reporting.** GitLab parses JUnit XML natively and renders failures in the
-merge request. Actions needs a third-party action for the same thing.
-
-**Conditionals.** Actions uses `if:` on a step; GitLab uses `rules:` on a job.
-Both express the same intent here — a pull request builds and smoke-tests the
-image but must never publish it, or anyone who can open a PR can publish to the
-registry namespace.
-
-### Credentials
-
-Neither pipeline stores a registry credential. Actions uses the run-scoped
-`GITHUB_TOKEN` with `packages: write` granted to the image job alone; GitLab uses
-`CI_JOB_TOKEN`, which dies with the job. Nothing long-lived exists to leak.
-
-### Both pipelines are verified green
-
-The Actions pipeline runs on GitHub and publishes to ghcr.io. The GitLab pipeline
-runs at [jameslrivera-group/cicd-pipeline-lab](https://gitlab.com/jameslrivera-group/cicd-pipeline-lab)
-and publishes to the GitLab container registry. All six GitLab jobs pass.
-
-Getting the GitLab side to run was worth more than writing it. The file was
-YAML-valid, mirrored the working Actions pipeline stage for stage, and had been
-committed as correct — and it could not create a single job.
-
-The cause was a GitLab-specific trap with no GitHub Actions equivalent: the build
-job was named `image`, which is a **reserved top-level keyword**. GitLab parsed
-the job as the global image directive, found a map where it expected a string,
-and rejected the entire file with `image name should be a string`. The result was
-a pipeline with zero jobs that failed in the same millisecond it was created —
-and the API reported `yaml_errors: null`, so the real message existed only on the
-pipeline page.
-
-Renaming it to `build:image` fixed it. Nothing about that is discoverable by
-reading the file, which is the whole argument for running a pipeline rather than
-shipping one that looks right.
-
----
+Both pipelines now pass and push to their registries.
 
 ## Conclusion
 
