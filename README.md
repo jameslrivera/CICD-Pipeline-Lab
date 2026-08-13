@@ -403,8 +403,3 @@ to finish — Docker for containerization, Kubernetes for container orchestratio
 Terraform and Helm for Infrastructure as Code, and GitHub Actions and GitLab CI
 for CI/CD automation.
 
-The biggest thing I took away was the difference between a control being
-configured and a control being effective. A NetworkPolicy that filtered nothing,
-a test suite that passed while the health endpoint was broken, and security
-settings that were purely advisory all looked correct and reported success. Each
-one was only found by testing it instead of trusting it.
