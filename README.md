@@ -376,7 +376,8 @@ git push
 A failed step stops the pipeline and marks the commit red. Pull requests run
 every stage except publish.
 
-<!-- paste GitHub Actions run screenshot here -->
+<img width="1285" height="617" alt="Screenshot 2026-08-12 at 8 55 06 PM" src="https://github.com/user-attachments/assets/4bbff01f-4a1e-4287-b42a-3a61a2272459" />
+
 
 ### Deployment Stage
 
