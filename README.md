@@ -376,6 +376,8 @@ git push
 A failed step stops the pipeline and marks the commit red. Pull requests run
 every stage except publish.
 
+**GitHub Actions** — all four jobs green on a push to `main`.
+
 <img width="1285" height="617" alt="Screenshot 2026-08-12 at 8 55 06 PM" src="https://github.com/user-attachments/assets/4bbff01f-4a1e-4287-b42a-3a61a2272459" />
 
 
@@ -391,6 +393,8 @@ virtual machine with most tooling already installed and a Docker daemon ready to
 use, while GitLab ran every job inside a container I had to specify and needed
 Docker-in-Docker to build an image. Neither pipeline stores a registry
 credential — each uses a token that is created for the run and expires with it.
+
+**GitLab CI** — the same pipeline, shown as its four stages.
 
 <img width="1404" height="673" alt="Screenshot 2026-08-12 at 8 37 51 PM" src="https://github.com/user-attachments/assets/186a9084-a4d1-4a24-a1e3-ce6f4fd6bddd" />
 
