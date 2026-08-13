@@ -391,7 +391,8 @@ use, while GitLab ran every job inside a container I had to specify and needed
 Docker-in-Docker to build an image. Neither pipeline stores a registry
 credential — each uses a token that is created for the run and expires with it.
 
-<!-- paste GitLab pipeline screenshot here -->
+<img width="1404" height="673" alt="Screenshot 2026-08-12 at 8 37 51 PM" src="https://github.com/user-attachments/assets/186a9084-a4d1-4a24-a1e3-ce6f4fd6bddd" />
+
 
 ---
 
